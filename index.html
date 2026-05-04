@@ -453,8 +453,13 @@ function activateTab(tabId) {
 // TAB 1 — RECHNER
 // ═══════════════════════════════════════════════════════════════════════════════
 const EDGE_CRITERIA = [
-  'Relative Stärke zum Index','Volumen > Ø (Breakout)','Saubere Basis / Konsolidierung',
-  'Sektor-Stärke','Story / Katalysator klar','Markt-Uptrend (IBD)','Ordentlicher Chart (no gaps)','Stage 2 Uptrend',
+  'Stage 2 — Trend intakt',
+  'Enges, kontrolliertes Kursverhalten',
+  'Volumen bestätigt',
+  'RS stark',
+  'Peers laufen',
+  'Sektor / Theme führt',
+  'Markt bullish',
 ];
 
 let calcState = { edgeCount: 0, ticker: '', limit: 0, stopp: 0, shares: 0, riskEur: 0,
@@ -512,7 +517,7 @@ function initCalc() {
               </label>`).join('')}
           </div>
           <div class="flex items-center gap-8">
-            <span class="text-muted">Edge Count: <strong id="edge-display">0</strong> / 8</span>
+            <span class="text-muted">Edge Count: <strong id="edge-display">0</strong> / 7</span>
             <span class="text-muted" style="margin-left:16px">Multiplikator:</span>
             <select id="c-edge-multi" style="width:auto">
               <option value="0.5">50% (Probier)</option>
