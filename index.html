@@ -507,7 +507,7 @@ function initCalc() {
         </div>
 
         <div class="card calc-section">
-          <div class="card-title">Edge Count (8 Kriterien)</div>
+          <div class="card-title">Edge Count (7 Kriterien)</div>
           <div class="edge-grid" id="edge-grid">
             ${EDGE_CRITERIA.map((c,i) => `
               <label class="edge-check" data-idx="${i}">
@@ -516,6 +516,7 @@ function initCalc() {
                 <span>${c}</span>
               </label>`).join('')}
           </div>
+          <div id="edge-recommendation" style="display:none;padding:10px 12px;border-radius:var(--radius-sm);margin-bottom:12px;font-size:13px;line-height:1.4"></div>
           <div class="flex items-center gap-8">
             <span class="text-muted">Edge Count: <strong id="edge-display">0</strong> / 7</span>
             <span class="text-muted" style="margin-left:16px">Multiplikator:</span>
@@ -590,8 +591,31 @@ function initCalc() {
     e.target.closest('.edge-check').classList.toggle('checked', e.target.checked);
     calcState.edgeCount = document.querySelectorAll('#edge-grid input:checked').length;
     document.getElementById('edge-display').textContent = calcState.edgeCount;
+    updateEdgeRecommendation(calcState.edgeCount);
     recalc();
   });
+
+  function updateEdgeRecommendation(n) {
+    const el = document.getElementById('edge-recommendation');
+    if (n === 0) { el.style.display = 'none'; return; }
+    let bg, color, title, text;
+    if (n <= 3) {
+      bg = 'var(--amber-dim)'; color = 'var(--amber)';
+      title = '50% — Pilot';
+      text  = 'Weniger als die Hälfte erfüllt — zu viele offene Fragen. Kleine Position um dabei zu sein, kein volles Commitment.';
+    } else if (n <= 5) {
+      bg = 'var(--accent-dim)'; color = 'var(--accent)';
+      title = '100% — Standard';
+      text  = 'Solides Setup, die wichtigsten Ebenen bestätigen. Normale Positionsgröße.';
+    } else {
+      bg = 'var(--green-dim)'; color = 'var(--green)';
+      title = '125% — Overweight';
+      text  = 'Fast alles oder alles passt — Aktie, Peers, Sektor, Markt alle aligned. Das sind die Trades die du maximal ausnutzen willst.';
+    }
+    el.style.display  = 'block';
+    el.style.background = bg;
+    el.innerHTML = `<span style="font-weight:600;color:${color}">${title}</span><span style="color:var(--text-dim);margin-left:10px">${text}</span>`;
+  }
   document.getElementById('btn-trade').addEventListener('click', saveTrade);
   document.getElementById('btn-pass').addEventListener('click', savePass);
   document.getElementById('btn-kandidat').addEventListener('click', saveKandidat);
