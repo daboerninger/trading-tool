@@ -1,0 +1,42 @@
+<!DOCTYPE html>
+<html lang="de">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>IBKR Weiterleitung</title>
+  <style>
+    body { margin: 0; background: #0D0F14; color: #E2E8F0; font-family: sans-serif;
+           display: flex; align-items: center; justify-content: center; min-height: 100vh; text-align: center; }
+    .box { padding: 32px; }
+    h2 { font-size: 16px; margin-bottom: 8px; color: #4F8EF7; }
+    p  { font-size: 13px; color: #64748B; margin-bottom: 24px; }
+    a  { display: inline-block; padding: 12px 28px; background: #4F8EF7; color: #fff;
+         border-radius: 8px; text-decoration: none; font-size: 14px; font-weight: 600; }
+  </style>
+</head>
+<body>
+<div class="box">
+  <h2>IBKR Order öffnen</h2>
+  <p>Tippe auf den Button um die Order in der IBKR App zu öffnen.</p>
+  <a id="open-link" href="#">In IBKR öffnen</a>
+</div>
+<script>
+  const params  = new URLSearchParams(location.search);
+  const android = /android/i.test(navigator.userAgent);
+  const query   = params.toString();
+
+  let url;
+  if (android) {
+    url = `intent://trade?${query}#Intent;scheme=ibkr;package=com.interactivebrokers.ibroker;end`;
+  } else {
+    url = `ibkr://trade?${query}`;
+  }
+
+  const link = document.getElementById('open-link');
+  link.href = url;
+
+  // Automatischer Versuch nach kurzem Delay (klappt wenn App installiert)
+  setTimeout(() => { window.location.href = url; }, 300);
+</script>
+</body>
+</html>

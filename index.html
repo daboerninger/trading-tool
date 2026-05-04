@@ -1,0 +1,1480 @@
+<!DOCTYPE html>
+<html lang="de">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Trading Tool v1</title>
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link href="https://fonts.googleapis.com/css2?family=DM+Sans:wght@300;400;500;600;700&family=DM+Mono:wght@400;500&display=swap" rel="stylesheet">
+  <script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.3/dist/chart.umd.min.js"></script>
+  <script src="https://cdnjs.cloudflare.com/ajax/libs/qrcodejs/1.0.0/qrcode.min.js"></script>
+
+  <style>
+    *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+
+    :root {
+      --bg: #0D0F14; --card: #13161E; --card2: #1A1E29; --border: #252A37;
+      --accent: #4F8EF7; --accent-dim: rgba(79,142,247,0.15);
+      --green: #34D399; --green-dim: rgba(52,211,153,0.15);
+      --red: #F87171; --red-dim: rgba(248,113,113,0.15);
+      --amber: #FBBF24; --amber-dim: rgba(251,191,36,0.15);
+      --text: #E2E8F0; --text-muted: #64748B; --text-dim: #94A3B8;
+      --radius: 10px; --radius-sm: 6px;
+    }
+
+    html, body { height: 100%; background: var(--bg); color: var(--text); font-family: 'DM Sans', sans-serif; font-size: 14px; line-height: 1.5; }
+    ::-webkit-scrollbar { width: 6px; } ::-webkit-scrollbar-thumb { background: var(--border); border-radius: 3px; }
+
+    #app { display: flex; flex-direction: column; min-height: 100vh; }
+
+    /* Topbar */
+    .topbar { display: flex; align-items: center; justify-content: space-between; padding: 0 24px; height: 54px; background: var(--card); border-bottom: 1px solid var(--border); flex-shrink: 0; position: relative; }
+    .topbar-brand { font-family: 'DM Mono', monospace; font-size: 12px; color: var(--accent); letter-spacing: 2px; text-transform: uppercase; }
+
+    /* Tabs */
+    .tab-nav { display: flex; gap: 2px; padding: 0 24px; background: var(--card); border-bottom: 1px solid var(--border); flex-shrink: 0; }
+    .tab-btn { padding: 12px 18px; background: transparent; border: none; border-bottom: 2px solid transparent; color: var(--text-muted); font-family: 'DM Sans', sans-serif; font-size: 13px; font-weight: 500; cursor: pointer; transition: color .15s, border-color .15s; white-space: nowrap; }
+    .tab-btn:hover { color: var(--text); }
+    .tab-btn.active { color: var(--accent); border-bottom-color: var(--accent); }
+
+    /* Content */
+    .main-content { flex: 1; overflow-y: auto; padding: 24px; }
+    .tab-panel { display: none; }
+    .tab-panel.active { display: block; }
+
+    /* Cards */
+    .card { background: var(--card); border: 1px solid var(--border); border-radius: var(--radius); padding: 20px; }
+    .card-title { font-size: 11px; font-weight: 600; letter-spacing: 1.5px; text-transform: uppercase; color: var(--text-muted); margin-bottom: 16px; }
+
+    /* Grids */
+    .grid-2 { display: grid; grid-template-columns: 1fr 1fr; gap: 16px; }
+    .grid-3 { display: grid; grid-template-columns: 1fr 1fr 1fr; gap: 16px; }
+
+    /* Form */
+    .field { display: flex; flex-direction: column; gap: 5px; }
+    .field label { font-size: 11px; font-weight: 500; color: var(--text-muted); letter-spacing: .5px; text-transform: uppercase; }
+    input[type=text], input[type=number], input[type=date], select, textarea {
+      background: var(--bg); border: 1px solid var(--border); border-radius: var(--radius-sm); color: var(--text);
+      font-family: 'DM Sans', sans-serif; font-size: 13px; padding: 8px 10px; outline: none; transition: border-color .15s; width: 100%;
+    }
+    input:focus, select:focus, textarea:focus { border-color: var(--accent); }
+    input[readonly] { color: var(--text-dim); cursor: default; }
+    select option { background: var(--card); }
+
+    /* Buttons */
+    .btn { display: inline-flex; align-items: center; justify-content: center; gap: 6px; padding: 9px 16px; border: none; border-radius: var(--radius-sm); font-family: 'DM Sans', sans-serif; font-size: 13px; font-weight: 500; cursor: pointer; transition: opacity .15s; white-space: nowrap; }
+    .btn:hover { opacity: .85; } .btn:disabled { opacity: .4; cursor: not-allowed; }
+    .btn-primary { background: var(--accent); color: #fff; }
+    .btn-success { background: var(--green); color: #0D0F14; }
+    .btn-danger  { background: var(--red); color: #fff; }
+    .btn-ghost   { background: var(--card2); color: var(--text-dim); border: 1px solid var(--border); }
+    .btn-sm { padding: 5px 10px; font-size: 12px; }
+    .w-full { width: 100%; }
+
+    /* Calculator */
+    .calc-layout { display: grid; grid-template-columns: 1fr 360px; gap: 16px; align-items: start; }
+    .calc-section { margin-bottom: 16px; }
+    .edge-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 8px; margin-bottom: 12px; }
+    .edge-check { display: flex; align-items: center; gap: 8px; padding: 8px 10px; background: var(--bg); border: 1px solid var(--border); border-radius: var(--radius-sm); cursor: pointer; transition: border-color .15s; user-select: none; }
+    .edge-check:hover { border-color: var(--accent); }
+    .edge-check.checked { border-color: var(--accent); background: var(--accent-dim); }
+    .edge-check input[type=checkbox] { display: none; }
+    .check-box { width: 16px; height: 16px; border: 1.5px solid var(--border); border-radius: 3px; display: flex; align-items: center; justify-content: center; flex-shrink: 0; transition: border-color .15s, background .15s; }
+    .edge-check.checked .check-box { border-color: var(--accent); background: var(--accent); }
+    .check-box svg { display: none; }
+    .edge-check.checked .check-box svg { display: block; }
+    .edge-check span { font-size: 12px; color: var(--text-dim); }
+    .edge-check.checked span { color: var(--text); }
+
+    /* Result panel */
+    .result-panel { background: var(--card); border: 1px solid var(--border); border-radius: var(--radius); padding: 20px; position: sticky; top: 0; }
+    .result-row { display: flex; justify-content: space-between; align-items: center; padding: 8px 0; border-bottom: 1px solid var(--border); }
+    .result-row:last-of-type { border-bottom: none; }
+    .result-label { font-size: 12px; color: var(--text-muted); }
+    .result-value { font-family: 'DM Mono', monospace; font-size: 14px; font-weight: 500; color: var(--text); }
+    .result-value.accent { color: var(--accent); } .result-value.green { color: var(--green); }
+    .result-value.red { color: var(--red); } .result-value.amber { color: var(--amber); }
+    .result-value.big { font-size: 20px; }
+    .checks-list { margin: 12px 0; }
+    .check-item { display: flex; align-items: center; gap: 8px; padding: 5px 0; font-size: 12px; }
+    .check-dot { width: 7px; height: 7px; border-radius: 50%; flex-shrink: 0; }
+    .check-dot.pass { background: var(--green); } .check-dot.fail { background: var(--red); } .check-dot.warn { background: var(--amber); }
+    .btn-row { display: flex; gap: 8px; margin-top: 16px; }
+    .btn-row .btn { flex: 1; }
+
+    /* Positions */
+    .position-card { background: var(--card); border: 1px solid var(--border); border-radius: var(--radius); padding: 16px 20px; margin-bottom: 12px; }
+    .position-ticker { font-family: 'DM Mono', monospace; font-size: 18px; font-weight: 500; }
+    .position-meta { display: flex; gap: 12px; font-size: 12px; color: var(--text-muted); flex-wrap: wrap; margin-top: 4px; }
+    .stopp-row { display: flex; gap: 8px; margin: 12px 0; flex-wrap: wrap; }
+    .stopp-pill { padding: 4px 10px; border-radius: 20px; font-family: 'DM Mono', monospace; font-size: 11px; background: var(--bg); border: 1px solid var(--border); color: var(--text-muted); }
+    .stopp-pill.current { background: var(--accent-dim); border-color: var(--accent); color: var(--accent); font-weight: 500; }
+    .stopp-pill.breakeven { background: var(--green-dim); border-color: var(--green); color: var(--green); }
+    .stopp-pill.hard { background: var(--red-dim); border-color: var(--red); color: var(--red); }
+    .trailing-section { display: flex; align-items: center; gap: 8px; margin-top: 10px; flex-wrap: wrap; }
+    .trailing-result { display: flex; gap: 6px; flex-wrap: wrap; margin-top: 8px; }
+    .trailing-opt { padding: 4px 10px; border-radius: 20px; font-family: 'DM Mono', monospace; font-size: 11px; background: var(--bg); border: 1px solid var(--border); color: var(--text-dim); cursor: pointer; transition: border-color .15s; }
+    .trailing-opt:hover { border-color: var(--accent); background: var(--accent-dim); color: var(--accent); }
+    .position-actions { display: flex; gap: 8px; margin-top: 12px; }
+
+    /* Sub tabs */
+    .sub-tab-nav { display: flex; gap: 2px; margin-bottom: 16px; border-bottom: 1px solid var(--border); }
+    .sub-tab-btn { padding: 8px 16px; background: transparent; border: none; border-bottom: 2px solid transparent; color: var(--text-muted); font-family: 'DM Sans', sans-serif; font-size: 13px; font-weight: 500; cursor: pointer; margin-bottom: -1px; transition: color .15s, border-color .15s; }
+    .sub-tab-btn:hover { color: var(--text); }
+    .sub-tab-btn.active { color: var(--accent); border-bottom-color: var(--accent); }
+
+    /* Tables */
+    .journal-table-wrap { overflow-x: auto; }
+    table { width: 100%; border-collapse: collapse; font-size: 12px; }
+    th { padding: 8px 12px; text-align: left; font-size: 10px; font-weight: 600; letter-spacing: 1px; text-transform: uppercase; color: var(--text-muted); border-bottom: 1px solid var(--border); white-space: nowrap; }
+    td { padding: 10px 12px; border-bottom: 1px solid var(--border); color: var(--text-dim); vertical-align: middle; }
+    tr:last-child td { border-bottom: none; } tr:hover td { background: var(--card2); }
+    td.mono { font-family: 'DM Mono', monospace; }
+
+    /* Badges */
+    .badge { display: inline-block; padding: 2px 8px; border-radius: 4px; font-size: 11px; font-weight: 500; }
+    .badge-green { background: var(--green-dim); color: var(--green); }
+    .badge-red { background: var(--red-dim); color: var(--red); }
+    .badge-amber { background: var(--amber-dim); color: var(--amber); }
+    .badge-blue { background: var(--accent-dim); color: var(--accent); }
+    .badge-gray { background: var(--card2); color: var(--text-muted); }
+
+    /* Stats */
+    .stats-grid { display: grid; grid-template-columns: repeat(4,1fr); gap: 12px; margin-bottom: 20px; }
+    .stat-card { background: var(--card); border: 1px solid var(--border); border-radius: var(--radius); padding: 16px; }
+    .stat-label { font-size: 11px; color: var(--text-muted); text-transform: uppercase; letter-spacing: 1px; margin-bottom: 6px; }
+    .stat-value { font-family: 'DM Mono', monospace; font-size: 24px; font-weight: 500; }
+    .stat-value.green { color: var(--green); } .stat-value.red { color: var(--red); } .stat-value.accent { color: var(--accent); }
+    .chart-card { background: var(--card); border: 1px solid var(--border); border-radius: var(--radius); padding: 20px; margin-bottom: 16px; }
+    .chart-card canvas { max-height: 240px; }
+
+    /* IBKR */
+    .ibkr-layout { display: grid; grid-template-columns: 1fr 1fr; gap: 16px; }
+    .deep-link-box { background: var(--bg); border: 1px solid var(--border); border-radius: var(--radius-sm); padding: 12px; font-family: 'DM Mono', monospace; font-size: 11px; color: var(--accent); word-break: break-all; min-height: 56px; margin: 12px 0; }
+
+    /* Modal */
+    .modal-overlay { position: fixed; inset: 0; background: rgba(0,0,0,.7); display: flex; align-items: center; justify-content: center; z-index: 1000; opacity: 0; pointer-events: none; transition: opacity .2s; }
+    .modal-overlay.open { opacity: 1; pointer-events: all; }
+    .modal { background: var(--card); border: 1px solid var(--border); border-radius: 12px; padding: 28px; width: 460px; max-width: 95vw; max-height: 90vh; overflow-y: auto; transform: translateY(8px); transition: transform .2s; }
+    .modal-overlay.open .modal { transform: translateY(0); }
+    .modal-title { font-size: 16px; font-weight: 600; margin-bottom: 20px; }
+    .modal-actions { display: flex; gap: 8px; justify-content: flex-end; margin-top: 20px; }
+
+    /* Toast */
+    #toast-container { position: fixed; bottom: 24px; right: 24px; display: flex; flex-direction: column; gap: 8px; z-index: 2000; }
+    .toast { padding: 12px 18px; border-radius: var(--radius-sm); font-size: 13px; font-weight: 500; animation: slideIn .2s ease; max-width: 300px; }
+    .toast.success { background: var(--green); color: #0D0F14; } .toast.error { background: var(--red); color: #fff; } .toast.info { background: var(--accent); color: #fff; }
+    @keyframes slideIn { from { transform: translateX(20px); opacity: 0; } to { transform: translateX(0); opacity: 1; } }
+
+    /* Misc */
+    .empty-state { text-align: center; padding: 60px 20px; color: var(--text-muted); }
+    .empty-state p { font-size: 13px; }
+    .section-header { display: flex; align-items: center; justify-content: space-between; margin-bottom: 16px; }
+    .section-title { font-size: 15px; font-weight: 600; }
+    .text-muted { color: var(--text-muted); font-size: 12px; }
+    .text-mono { font-family: 'DM Mono', monospace; }
+    .mt-8 { margin-top: 8px; } .mt-12 { margin-top: 12px; } .mt-16 { margin-top: 16px; }
+    .mb-12 { margin-bottom: 12px; }
+    .flex { display: flex; } .items-center { align-items: center; } .gap-8 { gap: 8px; }
+    .divider { border: none; border-top: 1px solid var(--border); margin: 16px 0; }
+
+    @media (max-width: 900px) { .calc-layout { grid-template-columns: 1fr; } .stats-grid { grid-template-columns: 1fr 1fr; } .ibkr-layout { grid-template-columns: 1fr; } }
+    @media (max-width: 600px) { .main-content { padding: 12px; } .grid-2, .grid-3 { grid-template-columns: 1fr; } .tab-btn { padding: 10px 12px; font-size: 12px; } }
+  </style>
+</head>
+<body>
+
+<!-- Login Overlay -->
+<div id="login-overlay" style="display:none;position:fixed;inset:0;background:var(--bg);z-index:9999;align-items:center;justify-content:center">
+  <div style="background:var(--card);border:1px solid var(--border);border-radius:var(--radius);padding:40px;width:100%;max-width:360px">
+    <div style="font-family:'DM Mono',monospace;font-size:11px;color:var(--accent);letter-spacing:2px;text-transform:uppercase;margin-bottom:24px">Trading Tool</div>
+    <div class="field mb-12"><label>E-Mail</label><input type="email" id="login-email" placeholder="name@mail.com" autocomplete="email"></div>
+    <div class="field mb-12"><label>Passwort</label><input type="password" id="login-pw" placeholder="••••••••" autocomplete="current-password"></div>
+    <div id="login-error" style="font-size:12px;color:var(--red);min-height:18px;margin-bottom:12px"></div>
+    <button class="btn btn-primary w-full" id="btn-login">Anmelden</button>
+  </div>
+</div>
+
+<div id="app" style="display:none">
+  <header class="topbar">
+    <div class="topbar-brand">Trading Tool v1</div>
+    <div style="position:absolute;left:50%;transform:translateX(-50%);font-size:13px;color:var(--text-muted);font-style:italic;letter-spacing:0.3px">
+      Discipline isn't a talent. It's a daily decision.
+    </div>
+    <div style="display:flex;align-items:center;gap:16px">
+      <span id="backup-status" style="font-size:11px;color:var(--text-muted)"></span>
+      <span id="user-email" style="font-size:11px;color:var(--text-muted)"></span>
+      <button id="btn-logout" class="btn btn-ghost btn-sm">Abmelden</button>
+    </div>
+  </header>
+
+  <nav class="tab-nav">
+    <button class="tab-btn active" data-tab="calc">Rechner</button>
+    <button class="tab-btn" data-tab="kandidaten">Kandidaten</button>
+    <button class="tab-btn" data-tab="positions">Positionen</button>
+    <button class="tab-btn" data-tab="journal">Journal</button>
+    <button class="tab-btn" data-tab="stats">Stats</button>
+    <button class="tab-btn" data-tab="ibkr">IBKR</button>
+  </nav>
+
+  <main class="main-content">
+    <div id="tab-calc"        class="tab-panel active"></div>
+    <div id="tab-kandidaten"  class="tab-panel"></div>
+    <div id="tab-positions"   class="tab-panel"></div>
+    <div id="tab-journal"   class="tab-panel"></div>
+    <div id="tab-stats"     class="tab-panel"></div>
+    <div id="tab-ibkr"      class="tab-panel"></div>
+  </main>
+</div>
+
+<!-- Modals (global) -->
+<div class="modal-overlay" id="modal-teilverkauf">
+  <div class="modal">
+    <div class="modal-title">Teilverkauf erfassen</div>
+    <div class="field mb-12"><label>Anzahl Aktien</label><input type="number" id="tv-shares" placeholder="25"></div>
+    <div class="field mb-12"><label>Verkaufskurs (€)</label><input type="number" id="tv-kurs" step="0.01"></div>
+    <div class="field mb-12"><label>Datum</label><input type="date" id="tv-datum"></div>
+    <div class="modal-actions">
+      <button class="btn btn-ghost" id="btn-tv-cancel">Abbrechen</button>
+      <button class="btn btn-success" id="btn-tv-save">Speichern</button>
+    </div>
+  </div>
+</div>
+
+<div class="modal-overlay" id="modal-close-pos">
+  <div class="modal">
+    <div class="modal-title">Position schließen</div>
+    <div class="field mb-12"><label>Exit-Kurs (€)</label><input type="number" id="cp-kurs" step="0.01"></div>
+    <div class="field mb-12"><label>Exit-Datum</label><input type="date" id="cp-datum"></div>
+    <div class="field mb-12">
+      <label>Exit-Grund</label>
+      <select id="cp-grund">
+        <option value="Stopp">Stopp ausgelöst</option>
+        <option value="Ziel">Kursziel erreicht</option>
+        <option value="Manuell">Manuell geschlossen</option>
+        <option value="Trailing">Trailing Stopp</option>
+      </select>
+    </div>
+    <div class="field mb-12"><label>Lernpunkt</label><textarea id="cp-lernpunkt" rows="2" placeholder="Was habe ich gelernt?"></textarea></div>
+    <div class="modal-actions">
+      <button class="btn btn-ghost" id="btn-cp-cancel">Abbrechen</button>
+      <button class="btn btn-danger" id="btn-cp-save">Position schließen</button>
+    </div>
+  </div>
+</div>
+
+<div id="toast-container"></div>
+
+<script type="module">
+// ═══════════════════════════════════════════════════════════════════════════════
+// FIREBASE
+// ═══════════════════════════════════════════════════════════════════════════════
+import { initializeApp }  from 'https://www.gstatic.com/firebasejs/10.8.0/firebase-app.js';
+import { getFirestore, collection, addDoc, serverTimestamp }
+  from 'https://www.gstatic.com/firebasejs/10.8.0/firebase-firestore.js';
+import { getAuth, signInWithEmailAndPassword, signOut, onAuthStateChanged }
+  from 'https://www.gstatic.com/firebasejs/10.8.0/firebase-auth.js';
+
+const firebaseConfig = {
+  apiKey: "AIzaSyDzp9dMsbd8Nxs-RJSogmjJuMFxEDzGntY",
+  authDomain: "trading-tool-181ce.firebaseapp.com",
+  projectId: "trading-tool-181ce",
+  storageBucket: "trading-tool-181ce.firebasestorage.app",
+  messagingSenderId: "752635401681",
+  appId: "1:752635401681:web:963f16c17398fba2013cf0"
+};
+
+const fbApp = initializeApp(firebaseConfig);
+const db    = getFirestore(fbApp);
+const auth  = getAuth(fbApp);
+
+// ── Auth Gate ─────────────────────────────────────────────────────────────────
+onAuthStateChanged(auth, user => {
+  if (user) {
+    document.getElementById('login-overlay').style.display = 'none';
+    document.getElementById('app').style.display = 'flex';
+    document.getElementById('user-email').textContent = user.email;
+    if (!bootstrapped) { bootstrapped = true; bootstrap(); }
+  } else {
+    document.getElementById('login-overlay').style.display = 'flex';
+    document.getElementById('app').style.display = 'none';
+  }
+});
+
+let bootstrapped = false;
+
+document.getElementById('btn-login').addEventListener('click', async () => {
+  const email = document.getElementById('login-email').value.trim();
+  const pw    = document.getElementById('login-pw').value;
+  const err   = document.getElementById('login-error');
+  err.textContent = '';
+  try {
+    await signInWithEmailAndPassword(auth, email, pw);
+  } catch (e) {
+    err.textContent = 'Login fehlgeschlagen. E-Mail oder Passwort falsch.';
+  }
+});
+
+document.getElementById('login-pw').addEventListener('keydown', e => {
+  if (e.key === 'Enter') document.getElementById('btn-login').click();
+});
+
+document.getElementById('btn-logout').addEventListener('click', () => signOut(auth));
+
+async function backupToFirestore(col, data) {
+  try {
+    const clean = JSON.parse(JSON.stringify(data)); // strip non-serializable
+    await addDoc(collection(db, col), { ...clean, created_at: serverTimestamp() });
+    setBackupStatus('✓', 'var(--green)');
+  } catch (e) {
+    console.warn('Firebase backup failed silently:', e.message);
+    setBackupStatus('⚠ Backup offline', 'var(--amber)');
+  }
+}
+
+function setBackupStatus(msg, color) {
+  const el = document.getElementById('backup-status');
+  if (!el) return;
+  el.textContent = msg;
+  el.style.color = color;
+  setTimeout(() => { el.textContent = ''; }, 4000);
+}
+
+// ═══════════════════════════════════════════════════════════════════════════════
+// LOCALSTORAGE — primärer Datenspeicher
+// ═══════════════════════════════════════════════════════════════════════════════
+const LS = {
+  get:  k    => JSON.parse(localStorage.getItem(k) || '[]'),
+  set:  (k,v) => localStorage.setItem(k, JSON.stringify(v)),
+};
+
+const KEY_POS        = 'tt_positions';
+const KEY_TRADES     = 'tt_trades';
+const KEY_PASSES     = 'tt_passes';
+const KEY_KANDIDATEN = 'tt_kandidaten';
+
+function genId() {
+  return Date.now().toString(36) + Math.random().toString(36).slice(2, 7);
+}
+
+// ═══════════════════════════════════════════════════════════════════════════════
+// HELPERS
+// ═══════════════════════════════════════════════════════════════════════════════
+function fmt(n, d = 2) {
+  if (n == null || isNaN(n)) return '—';
+  return Number(n).toLocaleString('de-DE', { minimumFractionDigits: d, maximumFractionDigits: d });
+}
+
+function fmtDate(s) {
+  if (!s) return '—';
+  const d = new Date(s);
+  return d.toLocaleDateString('de-DE', { day: '2-digit', month: '2-digit', year: '2-digit' });
+}
+
+function showToast(msg, type = 'info') {
+  const el = document.createElement('div');
+  el.className = `toast ${type}`;
+  el.textContent = msg;
+  document.getElementById('toast-container').appendChild(el);
+  setTimeout(() => el.remove(), 3200);
+}
+
+function openModal(id)  { document.getElementById(id).classList.add('open'); }
+function closeModal(id) { document.getElementById(id).classList.remove('open'); }
+
+// Close modals on overlay click
+document.querySelectorAll('.modal-overlay').forEach(o =>
+  o.addEventListener('click', e => { if (e.target === o) closeModal(o.id); })
+);
+document.getElementById('btn-tv-cancel').onclick = () => closeModal('modal-teilverkauf');
+document.getElementById('btn-cp-cancel').onclick = () => closeModal('modal-close-pos');
+
+// ═══════════════════════════════════════════════════════════════════════════════
+// TAB ROUTING
+// ═══════════════════════════════════════════════════════════════════════════════
+const initialized = {};
+
+document.querySelectorAll('.tab-btn').forEach(btn => {
+  btn.addEventListener('click', () => activateTab(btn.dataset.tab));
+});
+
+function activateTab(tabId) {
+  document.querySelectorAll('.tab-btn').forEach(b =>
+    b.classList.toggle('active', b.dataset.tab === tabId)
+  );
+  document.querySelectorAll('.tab-panel').forEach(p =>
+    p.classList.toggle('active', p.id === `tab-${tabId}`)
+  );
+  if (!initialized[tabId]) {
+    initialized[tabId] = true;
+    switch (tabId) {
+      case 'calc':        initCalc(); break;
+      case 'kandidaten':  initKandidaten(); break;
+      case 'positions':   initPositions(); break;
+      case 'journal':   initJournal(); break;
+      case 'stats':     initStats(); break;
+      case 'ibkr':      initIBKR(); break;
+    }
+  }
+}
+
+// ═══════════════════════════════════════════════════════════════════════════════
+// TAB 1 — RECHNER
+// ═══════════════════════════════════════════════════════════════════════════════
+const EDGE_CRITERIA = [
+  'Relative Stärke zum Index','Volumen > Ø (Breakout)','Saubere Basis / Konsolidierung',
+  'Sektor-Stärke','Story / Katalysator klar','Markt-Uptrend (IBD)','Ordentlicher Chart (no gaps)','Stage 2 Uptrend',
+];
+
+let calcState = { edgeCount: 0, ticker: '', limit: 0, stopp: 0, shares: 0, riskEur: 0,
+  entry: 0, lod: 0, riskPerShare: 0, posSize: 0, oneR: 0, fomo: false, depot: 0, riskStufe: 0.5 };
+
+function bootstrap() {
+  activateTab('calc');
+}
+
+function initCalc() {
+  document.getElementById('tab-calc').innerHTML = `
+    <div class="calc-layout">
+      <div>
+        <div class="card calc-section">
+          <div class="card-title">Basis</div>
+          <div class="grid-3">
+            <div class="field"><label>Ticker</label><input type="text" id="c-ticker" placeholder="AAPL" style="text-transform:uppercase"></div>
+            <div class="field"><label>Depot (€)</label><input type="number" id="c-depot" placeholder="50000"></div>
+            <div class="field"><label>Risk-Stufe</label>
+              <select id="c-risk"><option value="0.25">0.25%</option><option value="0.5" selected>0.50%</option><option value="0.75">0.75%</option></select>
+            </div>
+          </div>
+        </div>
+
+        <div class="card calc-section">
+          <div class="card-title">Entry & Limit</div>
+          <div class="grid-3">
+            <div class="field"><label>Entry-Kurs (€)</label><input type="number" id="c-entry" placeholder="100.00" step="0.01"></div>
+            <div class="field"><label>Limit-Puffer (%)</label><input type="number" id="c-limit-puffer" value="0.25" step="0.01"></div>
+            <div class="field"><label>Limit (auto)</label><input type="number" id="c-limit" readonly></div>
+          </div>
+        </div>
+
+        <div class="card calc-section">
+          <div class="card-title">Stopp (Low of Day)</div>
+          <div class="grid-3">
+            <div class="field"><label>Low of Day (€)</label><input type="number" id="c-lod" placeholder="97.50" step="0.01"></div>
+            <div class="field"><label>Stopp-Puffer (%)</label><input type="number" id="c-stopp-puffer" value="0.25" step="0.01"></div>
+            <div class="field"><label>Stopp (auto)</label><input type="number" id="c-stopp" readonly></div>
+          </div>
+          <div class="grid-2 mt-12">
+            <div class="field"><label>ATR% (optional)</label><input type="number" id="c-atr" placeholder="2.5" step="0.1"></div>
+          </div>
+        </div>
+
+        <div class="card calc-section">
+          <div class="card-title">Edge Count (8 Kriterien)</div>
+          <div class="edge-grid" id="edge-grid">
+            ${EDGE_CRITERIA.map((c,i) => `
+              <label class="edge-check" data-idx="${i}">
+                <input type="checkbox">
+                <div class="check-box"><svg width="10" height="8" viewBox="0 0 10 8" fill="none"><path d="M1 4L3.5 6.5L9 1" stroke="white" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"/></svg></div>
+                <span>${c}</span>
+              </label>`).join('')}
+          </div>
+          <div class="flex items-center gap-8">
+            <span class="text-muted">Edge Count: <strong id="edge-display">0</strong> / 8</span>
+            <span class="text-muted" style="margin-left:16px">Multiplikator:</span>
+            <select id="c-edge-multi" style="width:auto">
+              <option value="0.5">50% (Probier)</option>
+              <option value="1" selected>100% (Standard)</option>
+              <option value="1.25">125% (High-Conv.)</option>
+            </select>
+          </div>
+        </div>
+
+        <div class="card calc-section">
+          <div class="card-title">Setup Details</div>
+          <div class="grid-3">
+            <div class="field"><label>Setup-Grad</label>
+              <select id="c-setup"><option value="A">A — Top Setup</option><option value="B" selected>B — Standard</option><option value="C">C — Spekulativ</option></select>
+            </div>
+            <div class="field"><label>Theme</label><input type="text" id="c-theme" placeholder="z.B. AI, Energy..."></div>
+            <div class="field"><label>FOMO?</label>
+              <select id="c-fomo"><option value="false" selected>Nein</option><option value="true">Ja</option></select>
+            </div>
+          </div>
+        </div>
+      </div>
+
+      <div class="result-panel">
+        <div class="card-title">Ergebnis</div>
+        <div class="result-row"><span class="result-label">Limit-Kurs</span><span class="result-value accent" id="r-limit">—</span></div>
+        <div class="result-row"><span class="result-label">Stopp-Kurs</span><span class="result-value red" id="r-stopp">—</span></div>
+        <div class="result-row"><span class="result-label">Risk / Aktie</span><span class="result-value" id="r-rps">—</span></div>
+        <div class="result-row"><span class="result-label">Anzahl Aktien</span><span class="result-value big accent" id="r-shares">—</span></div>
+        <div class="result-row"><span class="result-label">Positionsgröße</span><span class="result-value" id="r-possize">—</span></div>
+        <div class="result-row"><span class="result-label">Risk (€)</span><span class="result-value amber" id="r-riskeur">—</span></div>
+        <div class="result-row"><span class="result-label">1R Ziel</span><span class="result-value green" id="r-1r">—</span></div>
+        <div class="result-row"><span class="result-label">2R Ziel</span><span class="result-value green" id="r-2r">—</span></div>
+        <div class="result-row"><span class="result-label">3R Ziel</span><span class="result-value green" id="r-3r">—</span></div>
+        <hr class="divider">
+        <div class="card-title">Checks</div>
+        <div class="checks-list" id="checks-list"></div>
+        <div id="r-risk-atr" style="margin:8px 0 4px;text-align:center;font-family:'DM Mono',monospace;font-size:13px;color:var(--text-muted)"></div>
+        <div class="btn-row" style="flex-direction:column;gap:6px">
+          <button class="btn btn-ghost w-full" id="btn-kandidat">Zu Kandidaten</button>
+          <div style="display:flex;gap:6px">
+            <button class="btn btn-primary" id="btn-trade" style="flex:1">Trade erfassen</button>
+            <button class="btn btn-ghost" id="btn-pass" style="flex:1">Passed Trade</button>
+          </div>
+        </div>
+      </div>
+    </div>`;
+
+  // Bind events
+  // Depot-Wert aus localStorage vorausfüllen
+  const savedDepot = localStorage.getItem('tt_depot');
+  if (savedDepot) document.getElementById('c-depot').value = savedDepot;
+
+  ['c-depot','c-risk','c-entry','c-limit-puffer','c-lod','c-stopp-puffer','c-atr','c-edge-multi'].forEach(id =>
+    document.getElementById(id)?.addEventListener('input', recalc)
+  );
+
+  // Depot-Wert bei Änderung speichern
+  document.getElementById('c-depot').addEventListener('change', e => {
+    if (e.target.value) localStorage.setItem('tt_depot', e.target.value);
+  });
+  document.getElementById('c-ticker').addEventListener('input', e => {
+    calcState.ticker = e.target.value = e.target.value.toUpperCase();
+  });
+  document.getElementById('edge-grid').addEventListener('change', e => {
+    if (e.target.type !== 'checkbox') return;
+    e.target.closest('.edge-check').classList.toggle('checked', e.target.checked);
+    calcState.edgeCount = document.querySelectorAll('#edge-grid input:checked').length;
+    document.getElementById('edge-display').textContent = calcState.edgeCount;
+    recalc();
+  });
+  document.getElementById('btn-trade').addEventListener('click', saveTrade);
+  document.getElementById('btn-pass').addEventListener('click', savePass);
+  document.getElementById('btn-kandidat').addEventListener('click', saveKandidat);
+}
+
+function recalc() {
+  const depot       = parseFloat(document.getElementById('c-depot').value) || 0;
+  const riskStufe   = parseFloat(document.getElementById('c-risk').value) || 0.5;
+  const entry       = parseFloat(document.getElementById('c-entry').value) || 0;
+  const limitPuffer = parseFloat(document.getElementById('c-limit-puffer').value) || 0.25;
+  const lod         = parseFloat(document.getElementById('c-lod').value) || 0;
+  const stoppPuffer = parseFloat(document.getElementById('c-stopp-puffer').value) || 0.25;
+  const atr         = parseFloat(document.getElementById('c-atr').value) || 0;
+  const edgeMulti   = parseFloat(document.getElementById('c-edge-multi').value) || 1;
+
+  const limit       = entry > 0 ? entry * (1 + limitPuffer / 100) : 0;
+  const stopp       = lod > 0   ? lod   * (1 - stoppPuffer / 100) : 0;
+  const riskEur     = depot * (riskStufe / 100) * edgeMulti;
+  const riskPerShare= limit > 0 && stopp > 0 ? limit - stopp : 0;
+  const sharesRaw   = riskPerShare > 0 ? riskEur / riskPerShare : 0;
+  const shares      = Math.round(sharesRaw);
+  const posSize     = shares * limit;
+  const oneR        = limit > 0 && riskPerShare > 0 ? limit + riskPerShare : 0;
+  const twoR        = limit > 0 && riskPerShare > 0 ? limit + 2 * riskPerShare : 0;
+  const threeR      = limit > 0 && riskPerShare > 0 ? limit + 3 * riskPerShare : 0;
+
+  if (entry > 0) document.getElementById('c-limit').value = limit.toFixed(2);
+  if (lod   > 0) document.getElementById('c-stopp').value = stopp.toFixed(2);
+
+  Object.assign(calcState, { depot, riskStufe, entry, limitPuffer, lod, stoppPuffer, atr, edgeMulti,
+    limit, stopp, riskPerShare, shares, posSize, riskEur, oneR,
+    ticker: document.getElementById('c-ticker').value.toUpperCase(),
+    fomo: document.getElementById('c-fomo').value === 'true' });
+
+  document.getElementById('r-limit').textContent   = limit > 0        ? fmt(limit) + ' €'       : '—';
+  document.getElementById('r-stopp').textContent   = stopp > 0        ? fmt(stopp) + ' €'       : '—';
+  document.getElementById('r-rps').textContent     = riskPerShare > 0 ? fmt(riskPerShare) + ' €': '—';
+  document.getElementById('r-shares').textContent  = sharesRaw > 0    ? fmt(sharesRaw, 1)        : '—';
+  document.getElementById('r-possize').textContent = posSize > 0      ? fmt(posSize) + ' €'     : '—';
+  document.getElementById('r-riskeur').textContent = riskEur > 0      ? fmt(riskEur) + ' €'     : '—';
+  document.getElementById('r-1r').textContent      = oneR > 0         ? fmt(oneR)   + ' €'      : '—';
+  document.getElementById('r-2r').textContent      = twoR > 0         ? fmt(twoR)   + ' €'      : '—';
+  document.getElementById('r-3r').textContent      = threeR > 0       ? fmt(threeR) + ' €'      : '—';
+
+  // Risk/ATR Anzeige
+  const riskPct = limit > 0 && riskPerShare > 0 ? riskPerShare / limit * 100 : 0;
+  const riskAtr = atr > 0 && riskPct > 0 ? atr / riskPct : 0;
+  const raEl = document.getElementById('r-risk-atr');
+  if (raEl) {
+    if (riskAtr > 0) {
+      const raColor = riskAtr >= 2 ? 'var(--green)' : riskAtr >= 1 ? 'var(--amber)' : 'var(--red)';
+      const raLabel = riskAtr >= 3 ? 'sehr gut' : riskAtr >= 2 ? 'gut' : riskAtr >= 1 ? 'grenzwertig' : 'kein Trade';
+      raEl.innerHTML = `Risk/ATR: <span style="color:${raColor};font-weight:600">${fmt(riskAtr,2)}</span> <span style="color:${raColor};font-size:11px">(${raLabel})</span>`;
+    } else {
+      raEl.textContent = atr > 0 ? 'Risk/ATR: — (Stopp fehlt)' : 'ATR% eingeben für Risk/ATR';
+    }
+  }
+  Object.assign(calcState, { riskPct, riskAtr });
+
+  // Checks
+  const checks = [
+    { pass: entry > 0,                                                                    label: 'Entry-Kurs eingegeben' },
+    { pass: stopp > 0,                                                                    label: 'Stopp definiert' },
+    { pass: stopp > 0 && entry > 0 && stopp < entry, warn: stopp >= entry && stopp > 0,  label: 'Stopp < Entry' },
+    { pass: riskPerShare > 0 && entry > 0 && riskPerShare/entry < 0.08,
+      warn: riskPerShare > 0 && entry > 0 && riskPerShare/entry >= 0.08,
+      label: `Risk/Share < 8% ${riskPerShare > 0 && entry > 0 ? '('+fmt(riskPerShare/entry*100,1)+'%)' : ''}` },
+    { pass: depot > 0 && posSize > 0 && posSize/depot <= 0.25,
+      warn: depot > 0 && posSize > 0 && posSize/depot > 0.25 && posSize/depot <= 0.35,
+      label: `Position ≤ 25% Depot ${posSize > 0 && depot > 0 ? '('+fmt(posSize/depot*100,1)+'%)' : ''}` },
+    { pass: calcState.edgeCount >= 5, warn: calcState.edgeCount >= 3 && calcState.edgeCount < 5,
+      label: `Edge Count ≥ 5 (${calcState.edgeCount})` },
+    ...(atr > 0 ? [{ pass: atr >= 2, warn: atr >= 1 && atr < 2, label: `ATR% ≥ 2% (${atr}%)` }] : []),
+    { pass: riskStufe <= 0.5, warn: riskStufe === 0.75, label: `Risk-Stufe angemessen (${riskStufe}%)` },
+  ];
+
+  document.getElementById('checks-list').innerHTML = checks.map(c => `
+    <div class="check-item">
+      <div class="check-dot ${c.pass ? 'pass' : c.warn ? 'warn' : 'fail'}"></div>
+      <span style="color:${c.pass ? 'var(--green)' : c.warn ? 'var(--amber)' : 'var(--red)'}">${c.label}</span>
+    </div>`).join('');
+}
+
+function saveTrade() {
+  const { ticker, limit, stopp, shares, riskEur, riskStufe, oneR, edgeCount, edgeMulti } = calcState;
+  if (!ticker)    return showToast('Ticker fehlt', 'error');
+  if (!(limit > 0)) return showToast('Entry/Limit fehlt', 'error');
+  if (!(stopp > 0)) return showToast('Stopp fehlt', 'error');
+  if (!(shares > 0)) return showToast('0 Aktien — Depot/Risk prüfen', 'error');
+
+  const rps = limit - stopp;
+  const pos = {
+    id:             genId(),
+    ticker,
+    kaufdatum:      new Date().toISOString(),
+    entry:          +limit.toFixed(4),
+    aktien:         shares,
+    stopp_hard:     +stopp.toFixed(4),
+    stopp_066r:     +(stopp + rps * 0.34).toFixed(4),
+    stopp_033r:     +(stopp + rps * 0.67).toFixed(4),
+    stopp_breakeven:+(limit * 1.0025).toFixed(4),
+    stopp_aktuell:  +stopp.toFixed(4),
+    risk_pct:       riskStufe,
+    risk_eur:       +riskEur.toFixed(2),
+    edge_count:     edgeCount,
+    edge_multi:     edgeMulti,
+    setup_grad:     document.getElementById('c-setup').value,
+    theme:          document.getElementById('c-theme').value,
+    fomo:           calcState.fomo,
+    oneR:           +oneR.toFixed(4),
+    teilverkäufe:   [],
+    status:         'offen',
+  };
+
+  // LocalStorage (primär)
+  const positions = LS.get(KEY_POS);
+  positions.push(pos);
+  LS.set(KEY_POS, positions);
+  showToast(`${ticker} als offene Position gespeichert`, 'success');
+
+  // Firebase (still im Hintergrund)
+  backupToFirestore('positions', { ...pos, local_id: pos.id });
+}
+
+function savePass() {
+  const ticker = document.getElementById('c-ticker').value.toUpperCase();
+  if (!ticker) return showToast('Ticker fehlt', 'error');
+
+  const p = {
+    id:              genId(),
+    ticker,
+    datum:           new Date().toISOString(),
+    geplanter_entry: calcState.limit || null,
+    grund:           '',
+    fomo:            calcState.fomo,
+    notiz:           '',
+    followup_5t:     '',
+    followup_10t:    '',
+    entscheidung_richtig: '',
+  };
+
+  // LocalStorage (primär)
+  const passes = LS.get(KEY_PASSES);
+  passes.push(p);
+  LS.set(KEY_PASSES, passes);
+  showToast(`${ticker} als Passed Trade gespeichert`, 'success');
+
+  // Firebase (still im Hintergrund)
+  backupToFirestore('passes', p);
+}
+
+function saveKandidat() {
+  const { ticker, limit, stopp, shares, riskEur, riskStufe, oneR, edgeCount, atr, riskPct, riskAtr } = calcState;
+  if (!ticker)      return showToast('Ticker fehlt', 'error');
+  if (!(limit > 0)) return showToast('Entry/Limit fehlt', 'error');
+  if (!(stopp > 0)) return showToast('Stopp fehlt', 'error');
+
+  const k = {
+    id:         genId(),
+    ticker,
+    datum:      new Date().toISOString(),
+    entry:      +limit.toFixed(4),
+    stopp_hard: +stopp.toFixed(4),
+    aktien:     shares,
+    pos_groesse:+(shares * limit).toFixed(2),
+    risk_eur:   +riskEur.toFixed(2),
+    risk_pct:   riskStufe,
+    risk_share_pct: +riskPct.toFixed(3),
+    atr_pct:    atr,
+    risk_atr:   +riskAtr.toFixed(3),
+    oneR:       +oneR.toFixed(4),
+    edge_count: edgeCount,
+    setup_grad: document.getElementById('c-setup').value,
+    theme:      document.getElementById('c-theme').value,
+    fomo:       calcState.fomo,
+    status:     'kandidat',
+  };
+
+  const all = LS.get(KEY_KANDIDATEN);
+  all.push(k);
+  LS.set(KEY_KANDIDATEN, all);
+  showToast(`${ticker} zu Kandidaten hinzugefügt`, 'info');
+
+  // Firebase (still im Hintergrund)
+  backupToFirestore('kandidaten', k);
+
+  // Tab wechseln & Liste sofort aktualisieren
+  initialized['kandidaten'] = false;
+  document.querySelector('[data-tab="kandidaten"]').click();
+}
+
+// ═══════════════════════════════════════════════════════════════════════════════
+// TAB 2 — KANDIDATEN
+// ═══════════════════════════════════════════════════════════════════════════════
+function initKandidaten() {
+  document.getElementById('tab-kandidaten').innerHTML = `
+    <div class="section-header">
+      <span class="section-title">Trade Kandidaten</span>
+      <span class="text-muted">Risk/ATR = ATR% ÷ Risk% — Minimum 1, ideal ≥ 2</span>
+    </div>
+    <div id="kandidaten-list"></div>`;
+  renderKandidaten();
+}
+
+function renderKandidaten() {
+  const list = document.getElementById('kandidaten-list');
+  if (!list) return;
+  const all = LS.get(KEY_KANDIDATEN).filter(k => k.status === 'kandidat')
+    .sort((a,b) => (b.risk_atr||0) - (a.risk_atr||0)); // beste zuerst
+
+  if (!all.length) {
+    list.innerHTML = `<div class="empty-state"><p>Keine Kandidaten — im Rechner "Zu Kandidaten" klicken</p></div>`;
+    return;
+  }
+
+  list.innerHTML = `
+    <div class="card" style="overflow-x:auto">
+      <table>
+        <thead><tr>
+          <th>Ticker</th>
+          <th>Datum</th>
+          <th>Setup</th>
+          <th>Entry</th>
+          <th>Hard Stopp</th>
+          <th>Aktien</th>
+          <th>Pos. Größe</th>
+          <th>Risk € / Trade%</th>
+          <th>ATR%</th>
+          <th style="min-width:90px">Risk/ATR</th>
+          <th>Edge</th>
+          <th>Theme</th>
+          <th></th>
+        </tr></thead>
+        <tbody>
+          ${all.map(k => {
+            const raColor = !k.risk_atr ? 'var(--text-muted)'
+              : k.risk_atr >= 2 ? 'var(--green)'
+              : k.risk_atr >= 1 ? 'var(--amber)'
+              : 'var(--red)';
+            const raBg = !k.risk_atr ? ''
+              : k.risk_atr >= 2 ? 'background:var(--green-dim)'
+              : k.risk_atr >= 1 ? 'background:var(--amber-dim)'
+              : 'background:var(--red-dim)';
+            const raLabel = !k.risk_atr ? '—'
+              : k.risk_atr >= 3 ? `${fmt(k.risk_atr,2)} ★★`
+              : k.risk_atr >= 2 ? `${fmt(k.risk_atr,2)} ★`
+              : k.risk_atr >= 1 ? fmt(k.risk_atr,2)
+              : `${fmt(k.risk_atr,2)} ✗`;
+            return `<tr>
+              <td><strong class="text-mono">${k.ticker}</strong>${k.fomo ? ' <span class="badge badge-amber" style="font-size:9px">FOMO</span>' : ''}</td>
+              <td>${fmtDate(k.datum)}</td>
+              <td>${k.setup_grad ? `<span class="badge badge-blue">${k.setup_grad}</span>` : '—'}</td>
+              <td class="mono">${fmt(k.entry)} €</td>
+              <td class="mono" style="color:var(--red)">${fmt(k.stopp_hard)} €</td>
+              <td class="mono">${k.aktien || '—'}</td>
+              <td class="mono">${k.pos_groesse ? fmt(k.pos_groesse)+' €' : '—'}</td>
+              <td class="mono" style="color:var(--amber)">${fmt(k.risk_eur)} € <span style="color:var(--text-muted);font-size:11px">(${k.risk_share_pct ? fmt(k.risk_share_pct,2)+'%' : '—'})</span></td>
+              <td class="mono">${k.atr_pct ? k.atr_pct+'%' : '—'}</td>
+              <td style="text-align:center">
+                <span style="font-family:'DM Mono',monospace;font-size:13px;font-weight:600;color:${raColor};padding:3px 8px;border-radius:4px;${raBg}">${raLabel}</span>
+              </td>
+              <td class="mono">${k.edge_count}/8</td>
+              <td>${k.theme ? `<span class="badge badge-gray">${k.theme}</span>` : '—'}</td>
+              <td>
+                <div style="display:flex;gap:4px;white-space:nowrap">
+                  <button class="btn btn-ghost btn-sm btn-k-ibkr"  data-id="${k.id}" title="Order in IBKR platzieren">Order →</button>
+                  <button class="btn btn-primary btn-sm btn-k-trade" data-id="${k.id}" title="Als offene Position erfassen">Erfassen</button>
+                  <button class="btn btn-ghost btn-sm btn-k-pass"  data-id="${k.id}" title="Als Pass speichern">Pass</button>
+                  <button class="btn btn-ghost btn-sm btn-k-del"   data-id="${k.id}" title="Löschen" style="color:var(--red)">✕</button>
+                </div>
+              </td>
+            </tr>`;
+          }).join('')}
+        </tbody>
+      </table>
+    </div>`;
+
+  // Trade erfassen
+  list.querySelectorAll('.btn-k-trade').forEach(btn => {
+    btn.addEventListener('click', () => {
+      const k = LS.get(KEY_KANDIDATEN).find(x => x.id === btn.dataset.id);
+      if (!k) return;
+      const rps = k.entry - k.stopp_hard;
+      const pos = {
+        id: genId(), ticker: k.ticker, kaufdatum: new Date().toISOString(),
+        entry: k.entry, aktien: k.aktien,
+        stopp_hard: k.stopp_hard,
+        stopp_066r: +(k.stopp_hard + rps * 0.34).toFixed(4),
+        stopp_033r: +(k.stopp_hard + rps * 0.67).toFixed(4),
+        stopp_breakeven: +(k.entry * 1.0025).toFixed(4),
+        stopp_aktuell: k.stopp_hard,
+        risk_pct: k.risk_pct, risk_eur: k.risk_eur,
+        edge_count: k.edge_count, setup_grad: k.setup_grad,
+        theme: k.theme, fomo: k.fomo, oneR: k.oneR,
+        teilverkäufe: [], status: 'offen',
+      };
+      const positions = LS.get(KEY_POS);
+      positions.push(pos);
+      LS.set(KEY_POS, positions);
+      // Kandidat als erledigt markieren
+      const all = LS.get(KEY_KANDIDATEN);
+      const idx = all.findIndex(x => x.id === btn.dataset.id);
+      if (idx >= 0) { all[idx].status = 'traded'; LS.set(KEY_KANDIDATEN, all); }
+      showToast(`${k.ticker} als offene Position erfasst`, 'success');
+      backupToFirestore('positions', { ...pos, local_id: pos.id });
+      renderKandidaten();
+      // Positionen-Tab refreshen falls bereits geladen
+      initialized['positions'] = false;
+      document.querySelector('[data-tab="positions"]').click();
+    });
+  });
+
+  // IBKR
+  list.querySelectorAll('.btn-k-ibkr').forEach(btn => {
+    btn.addEventListener('click', () => {
+      const k = LS.get(KEY_KANDIDATEN).find(x => x.id === btn.dataset.id);
+      if (!k) return;
+      // Werte in calcState laden
+      Object.assign(calcState, { ticker: k.ticker, shares: k.aktien, limit: k.entry, stopp: k.stopp_hard });
+      // IBKR-Tab neu initialisieren damit Auto-Fill greift (auch wenn Tab schon offen war)
+      initialized['ibkr'] = false;
+      document.querySelector('[data-tab="ibkr"]').click();
+    });
+  });
+
+  // Pass
+  list.querySelectorAll('.btn-k-pass').forEach(btn => {
+    btn.addEventListener('click', () => {
+      const k = LS.get(KEY_KANDIDATEN).find(x => x.id === btn.dataset.id);
+      if (!k) return;
+      const p = { id: genId(), ticker: k.ticker, datum: new Date().toISOString(),
+        geplanter_entry: k.entry, grund: '', fomo: k.fomo,
+        notiz: '', followup_5t: '', followup_10t: '', entscheidung_richtig: '' };
+      const passes = LS.get(KEY_PASSES); passes.push(p); LS.set(KEY_PASSES, passes);
+      const all = LS.get(KEY_KANDIDATEN);
+      const idx = all.findIndex(x => x.id === btn.dataset.id);
+      if (idx >= 0) { all[idx].status = 'passed'; LS.set(KEY_KANDIDATEN, all); }
+      showToast(`${k.ticker} als Pass gespeichert`, 'success');
+      backupToFirestore('passes', p);
+      renderKandidaten();
+    });
+  });
+
+  // Löschen
+  list.querySelectorAll('.btn-k-del').forEach(btn => {
+    btn.addEventListener('click', () => {
+      const all = LS.get(KEY_KANDIDATEN).filter(x => x.id !== btn.dataset.id);
+      LS.set(KEY_KANDIDATEN, all);
+      renderKandidaten();
+    });
+  });
+}
+
+// ═══════════════════════════════════════════════════════════════════════════════
+// TAB 3 — POSITIONEN
+// ═══════════════════════════════════════════════════════════════════════════════
+function initPositions() {
+  document.getElementById('tab-positions').innerHTML = `
+    <div class="section-header">
+      <span class="section-title">Offene Positionen</span>
+      <button class="btn btn-ghost btn-sm" id="btn-refresh-pos">Aktualisieren</button>
+    </div>
+    <div id="positions-list"></div>`;
+  document.getElementById('btn-refresh-pos').addEventListener('click', renderPositions);
+  renderPositions();
+}
+
+function renderPositions() {
+  const list = document.getElementById('positions-list');
+  const positions = LS.get(KEY_POS).filter(p => p.status === 'offen');
+
+  if (!positions.length) {
+    list.innerHTML = `<div class="empty-state"><p>Keine offenen Positionen</p></div>`;
+    return;
+  }
+
+  list.innerHTML = positions.map(p => {
+    const isCurrent = v => Math.abs(v - p.stopp_aktuell) < 0.0001;
+    const pill = (v, label, cls) => `<div class="stopp-pill ${isCurrent(v) ? 'current' : cls}">${label}: ${fmt(v)} €</div>`;
+    const tv = (p.teilverkäufe || []);
+    return `
+      <div class="position-card">
+        <div style="display:flex;justify-content:space-between;align-items:flex-start">
+          <div>
+            <div class="position-ticker">${p.ticker}</div>
+            <div class="position-meta">
+              <span>Kauf: ${fmtDate(p.kaufdatum)}</span>
+              <span>Entry: ${fmt(p.entry)} €</span>
+              <span>${p.aktien} Aktien</span>
+              <span>Risk: <span style="color:var(--amber)">${fmt(p.risk_eur)} €</span> <span style="color:var(--text-muted)">(${p.entry && p.stopp_hard ? fmt((p.entry-p.stopp_hard)/p.entry*100,2)+'%' : '—'})</span></span>
+              ${p.setup_grad ? `<span class="badge badge-blue">${p.setup_grad}</span>` : ''}
+              ${p.theme      ? `<span class="badge badge-gray">${p.theme}</span>`      : ''}
+              ${p.fomo       ? `<span class="badge badge-amber">FOMO</span>`           : ''}
+            </div>
+          </div>
+          <div class="text-mono" style="font-size:12px;color:var(--text-muted)">1R: ${fmt(p.oneR)} €</div>
+        </div>
+
+        <div class="stopp-row">
+          ${pill(p.stopp_hard,     'Hard −1R',  'hard')}
+          ${pill(p.stopp_066r,     '−0.66R',    '')}
+          ${pill(p.stopp_033r,     '−0.33R',    '')}
+          ${pill(p.stopp_breakeven,'BE +0.25R', 'breakeven')}
+        </div>
+
+        ${tv.length ? `<div class="text-muted mt-8">Teilverkäufe: ${tv.map(t=>`${t.shares}×${fmt(t.kurs)}€`).join(', ')}</div>` : ''}
+
+        <div class="trailing-section">
+          <input type="number" class="trailing-input" placeholder="Kurs für Trailing..." step="0.01" style="width:180px" data-id="${p.id}">
+          <button class="btn btn-ghost btn-sm btn-calc-trailing" data-id="${p.id}">Berechnen</button>
+        </div>
+        <div class="trailing-result" id="trailing-${p.id}"></div>
+
+        <div class="position-actions">
+          <button class="btn btn-ghost btn-sm btn-tv" data-id="${p.id}">Teilverkauf</button>
+          <button class="btn btn-danger btn-sm btn-close" data-id="${p.id}">Schließen</button>
+        </div>
+      </div>`;
+  }).join('');
+
+  // Trailing
+  document.querySelectorAll('.btn-calc-trailing').forEach(btn => {
+    btn.addEventListener('click', () => {
+      const id  = btn.dataset.id;
+      const kurs = parseFloat(document.querySelector(`.trailing-input[data-id="${id}"]`).value);
+      if (!kurs) return showToast('Kurs eingeben', 'error');
+      const pos = LS.get(KEY_POS).find(p => p.id === id);
+      const rps = (pos?.entry || 0) - (pos?.stopp_hard || 0);
+      const opts = [
+        { label: 'Trailing (−0.25%)', val: kurs * 0.9975 },
+        { label: '−0.33R', val: (pos?.stopp_hard||0) + rps * 0.67 },
+        { label: '−0.66R', val: (pos?.stopp_hard||0) + rps * 0.34 },
+        { label: 'BE +0.25R', val: pos?.stopp_breakeven || 0 },
+      ];
+      const container = document.getElementById(`trailing-${id}`);
+      container.innerHTML = opts.map(o =>
+        `<div class="trailing-opt" data-id="${id}" data-val="${o.val.toFixed(4)}">${o.label}: ${fmt(o.val)} €</div>`
+      ).join('');
+      container.querySelectorAll('.trailing-opt').forEach(opt => {
+        opt.addEventListener('click', () => {
+          const newVal = parseFloat(opt.dataset.val);
+          const all = LS.get(KEY_POS);
+          const idx = all.findIndex(p => p.id === id);
+          if (idx >= 0) { all[idx].stopp_aktuell = newVal; LS.set(KEY_POS, all); }
+          showToast('Stopp aktualisiert: ' + fmt(newVal) + ' €', 'success');
+          renderPositions();
+        });
+      });
+    });
+  });
+
+  // Teilverkauf
+  document.querySelectorAll('.btn-tv').forEach(btn => {
+    btn.addEventListener('click', () => {
+      const id = btn.dataset.id;
+      document.getElementById('tv-datum').value = new Date().toISOString().split('T')[0];
+      document.getElementById('tv-shares').value = '';
+      document.getElementById('tv-kurs').value   = '';
+      openModal('modal-teilverkauf');
+      document.getElementById('btn-tv-save').onclick = () => {
+        const shares = parseInt(document.getElementById('tv-shares').value);
+        const kurs   = parseFloat(document.getElementById('tv-kurs').value);
+        const datum  = document.getElementById('tv-datum').value;
+        if (!shares || !kurs) return showToast('Shares und Kurs eingeben', 'error');
+        const all = LS.get(KEY_POS);
+        const idx = all.findIndex(p => p.id === id);
+        if (idx < 0) return;
+        all[idx].teilverkäufe = [...(all[idx].teilverkäufe||[]), { shares, kurs, datum }];
+        all[idx].aktien = Math.max(0, all[idx].aktien - shares);
+        LS.set(KEY_POS, all);
+        showToast('Teilverkauf gespeichert', 'success');
+        closeModal('modal-teilverkauf');
+        renderPositions();
+      };
+    });
+  });
+
+  // Schließen
+  document.querySelectorAll('.btn-close').forEach(btn => {
+    btn.addEventListener('click', () => {
+      const id = btn.dataset.id;
+      document.getElementById('cp-datum').value    = new Date().toISOString().split('T')[0];
+      document.getElementById('cp-kurs').value     = '';
+      document.getElementById('cp-lernpunkt').value= '';
+      openModal('modal-close-pos');
+      document.getElementById('btn-cp-save').onclick = () => {
+        const exitKurs  = parseFloat(document.getElementById('cp-kurs').value);
+        const exitDatum = document.getElementById('cp-datum').value;
+        const exitGrund = document.getElementById('cp-grund').value;
+        const lernpunkt = document.getElementById('cp-lernpunkt').value;
+        if (!exitKurs) return showToast('Exit-Kurs eingeben', 'error');
+
+        const all = LS.get(KEY_POS);
+        const pos = all.find(p => p.id === id);
+        if (!pos) return;
+
+        const rps     = pos.oneR > 0 ? pos.oneR - pos.entry : pos.entry - pos.stopp_hard;
+        const pnlAbs  = +(((exitKurs - pos.entry) * pos.aktien).toFixed(2));
+        const pnlR    = rps > 0 ? +(pnlAbs / (rps * pos.aktien)).toFixed(3) : 0;
+        const kaufD   = new Date(pos.kaufdatum);
+        const exitD   = new Date(exitDatum);
+        const hold    = Math.round((exitD - kaufD) / 86400000);
+
+        const trade = { ...pos, exit_datum: exitDatum, exit_kurs: exitKurs, exit_grund: exitGrund,
+          pnl_abs: pnlAbs, pnl_r: pnlR, haltedauer: hold, lernpunkt, status: 'closed' };
+
+        // LocalStorage (primär)
+        const trades = LS.get(KEY_TRADES);
+        trades.push(trade);
+        LS.set(KEY_TRADES, trades);
+        LS.set(KEY_POS, all.filter(p => p.id !== id));
+
+        showToast(`${pos.ticker} geschlossen — ${pnlR >= 0 ? '+' : ''}${fmt(pnlR, 2)}R`, pnlR >= 0 ? 'success' : 'error');
+        closeModal('modal-close-pos');
+        renderPositions();
+
+        // Firebase (still im Hintergrund)
+        backupToFirestore('trades', trade);
+      };
+    });
+  });
+}
+
+// ═══════════════════════════════════════════════════════════════════════════════
+// TAB 3 — JOURNAL
+// ═══════════════════════════════════════════════════════════════════════════════
+function initJournal() {
+  document.getElementById('tab-journal').innerHTML = `
+    <div class="section-header"><span class="section-title">Journal</span></div>
+    <div class="sub-tab-nav">
+      <button class="sub-tab-btn active" data-sub="trades">Triggered Trades</button>
+      <button class="sub-tab-btn" data-sub="passes">Pass-Einträge</button>
+    </div>
+    <div id="journal-sub-trades"></div>
+    <div id="journal-sub-passes" style="display:none"></div>`;
+
+  document.querySelectorAll('.sub-tab-btn').forEach(btn => {
+    btn.addEventListener('click', () => {
+      document.querySelectorAll('.sub-tab-btn').forEach(b => b.classList.remove('active'));
+      btn.classList.add('active');
+      const sub = btn.dataset.sub;
+      document.getElementById('journal-sub-trades').style.display = sub === 'trades' ? '' : 'none';
+      document.getElementById('journal-sub-passes').style.display = sub === 'passes' ? '' : 'none';
+    });
+  });
+
+  renderJournalTrades();
+  renderJournalPasses();
+}
+
+function renderJournalTrades() {
+  const trades = LS.get(KEY_TRADES).sort((a,b) => new Date(b.exit_datum||0) - new Date(a.exit_datum||0));
+  const container = document.getElementById('journal-sub-trades');
+
+  if (!trades.length) { container.innerHTML = `<div class="empty-state"><p>Noch keine abgeschlossenen Trades</p></div>`; return; }
+
+  container.innerHTML = `
+    <div class="section-header mb-12">
+      <span class="text-muted">${trades.length} Trades</span>
+      <button class="btn btn-ghost btn-sm" id="btn-export-trades">CSV Export</button>
+    </div>
+    <div class="card journal-table-wrap">
+      <table>
+        <thead><tr>
+          <th>Ticker</th><th>Kauf</th><th>Exit</th><th>Tage</th>
+          <th>Entry</th><th>Exit-Kurs</th><th>Aktien</th>
+          <th>Risk</th><th>P&L €</th><th>P&L R</th><th>Grund</th><th>Setup</th><th>Lernpunkt</th>
+        </tr></thead>
+        <tbody>${trades.map(t => `
+          <tr>
+            <td><strong class="text-mono">${t.ticker}</strong></td>
+            <td>${fmtDate(t.kaufdatum)}</td>
+            <td>${fmtDate(t.exit_datum)}</td>
+            <td class="text-muted">${t.haltedauer != null ? t.haltedauer+'d' : '—'}</td>
+            <td class="mono">${fmt(t.entry)} €</td>
+            <td class="mono">${fmt(t.exit_kurs)} €</td>
+            <td class="mono">${t.aktien}</td>
+            <td class="mono" style="color:var(--amber)">${t.risk_eur ? fmt(t.risk_eur)+' €' : '—'} <span style="color:var(--text-muted);font-size:11px">${t.entry && t.stopp_hard ? '('+fmt((t.entry-t.stopp_hard)/t.entry*100,2)+'%)' : ''}</span></td>
+            <td class="mono" style="color:${(t.pnl_abs||0)>=0?'var(--green)':'var(--red)'}">
+              ${(t.pnl_abs||0)>=0?'+':''}${fmt(t.pnl_abs)} €</td>
+            <td><span class="badge ${(t.pnl_r||0)>=0?'badge-green':'badge-red'}">
+              ${(t.pnl_r||0)>=0?'+':''}${fmt(t.pnl_r,2)}R</span></td>
+            <td><span class="badge badge-gray">${t.exit_grund||'—'}</span></td>
+            <td><span class="badge badge-blue">${t.setup_grad||'—'}</span></td>
+            <td style="max-width:180px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;color:var(--text-muted)"
+                title="${t.lernpunkt||''}">${t.lernpunkt||'—'}</td>
+          </tr>`).join('')}
+        </tbody>
+      </table>
+    </div>`;
+
+  document.getElementById('btn-export-trades').addEventListener('click', () => exportCSV(trades, 'trades'));
+}
+
+function renderJournalPasses() {
+  const passes = LS.get(KEY_PASSES).sort((a,b) => new Date(b.datum||0) - new Date(a.datum||0));
+  const container = document.getElementById('journal-sub-passes');
+
+  if (!passes.length) { container.innerHTML = `<div class="empty-state"><p>Noch keine Pass-Einträge</p></div>`; return; }
+
+  container.innerHTML = `
+    <div class="section-header mb-12">
+      <span class="text-muted">${passes.length} Einträge</span>
+      <button class="btn btn-ghost btn-sm" id="btn-export-passes">CSV Export</button>
+    </div>
+    <div class="card journal-table-wrap">
+      <table>
+        <thead><tr>
+          <th>Ticker</th><th>Datum</th><th>Entry geplant</th><th>FOMO</th>
+          <th>+5T Follow-up</th><th>+10T Follow-up</th><th>Richtig?</th>
+        </tr></thead>
+        <tbody>${passes.map(p => `
+          <tr>
+            <td><strong class="text-mono">${p.ticker}</strong></td>
+            <td>${fmtDate(p.datum)}</td>
+            <td class="mono">${p.geplanter_entry ? fmt(p.geplanter_entry)+' €' : '—'}</td>
+            <td>${p.fomo ? '<span class="badge badge-amber">FOMO</span>' : '<span class="badge badge-gray">Nein</span>'}</td>
+            <td><input type="text" class="pass-field" data-id="${p.id}" data-field="followup_5t"
+              value="${p.followup_5t||''}" placeholder="Was passierte..." style="font-size:11px;padding:4px 7px;min-width:120px"></td>
+            <td><input type="text" class="pass-field" data-id="${p.id}" data-field="followup_10t"
+              value="${p.followup_10t||''}" placeholder="Was passierte..." style="font-size:11px;padding:4px 7px;min-width:120px"></td>
+            <td><select class="pass-decision" data-id="${p.id}" style="font-size:11px;padding:4px 7px">
+              <option value="">—</option>
+              <option value="Ja"  ${p.entscheidung_richtig==='Ja'  ?'selected':''}>Ja</option>
+              <option value="Nein"${p.entscheidung_richtig==='Nein'?'selected':''}>Nein</option>
+            </select></td>
+          </tr>`).join('')}
+        </tbody>
+      </table>
+    </div>`;
+
+  document.querySelectorAll('.pass-field').forEach(inp => {
+    inp.addEventListener('change', e => {
+      const all = LS.get(KEY_PASSES);
+      const idx = all.findIndex(p => p.id === e.target.dataset.id);
+      if (idx >= 0) { all[idx][e.target.dataset.field] = e.target.value; LS.set(KEY_PASSES, all); }
+      showToast('Gespeichert', 'success');
+    });
+  });
+  document.querySelectorAll('.pass-decision').forEach(sel => {
+    sel.addEventListener('change', e => {
+      const all = LS.get(KEY_PASSES);
+      const idx = all.findIndex(p => p.id === e.target.dataset.id);
+      if (idx >= 0) { all[idx].entscheidung_richtig = e.target.value; LS.set(KEY_PASSES, all); }
+      showToast('Gespeichert', 'success');
+    });
+  });
+  document.getElementById('btn-export-passes').addEventListener('click', () => exportCSV(passes, 'passes'));
+}
+
+function exportCSV(data, type) {
+  let headers, rows;
+  if (type === 'trades') {
+    headers = ['Ticker','Kaufdatum','Exit-Datum','Tage','Entry','Exit-Kurs','Aktien','P&L EUR','P&L R','Grund','Setup','Lernpunkt'];
+    rows = data.map(t => [t.ticker, fmtDate(t.kaufdatum), fmtDate(t.exit_datum), t.haltedauer||'',
+      (t.entry||0).toFixed(2), (t.exit_kurs||0).toFixed(2), t.aktien||'',
+      (t.pnl_abs||0).toFixed(2), (t.pnl_r||0).toFixed(3), t.exit_grund||'', t.setup_grad||'', (t.lernpunkt||'').replace(/"/g,'""')]);
+  } else {
+    headers = ['Ticker','Datum','Entry geplant','FOMO','+5T','+10T','Richtig'];
+    rows = data.map(p => [p.ticker, fmtDate(p.datum), p.geplanter_entry ? (p.geplanter_entry).toFixed(2) : '',
+      p.fomo?'Ja':'Nein', (p.followup_5t||'').replace(/"/g,'""'),
+      (p.followup_10t||'').replace(/"/g,'""'), p.entscheidung_richtig||'']);
+  }
+  const csv = [headers,...rows].map(r=>r.map(v=>`"${v}"`).join(';')).join('\n');
+  const a = document.createElement('a');
+  a.href = URL.createObjectURL(new Blob(['\uFEFF'+csv], {type:'text/csv;charset=utf-8;'}));
+  a.download = `${type}_${new Date().toISOString().split('T')[0]}.csv`;
+  a.click();
+}
+
+// ═══════════════════════════════════════════════════════════════════════════════
+// TAB 4 — STATS
+// ═══════════════════════════════════════════════════════════════════════════════
+function initStats() {
+  document.getElementById('tab-stats').innerHTML = `
+    <div class="section-header">
+      <span class="section-title">Performance Stats</span>
+      <button class="btn btn-ghost btn-sm" id="btn-refresh-stats">Aktualisieren</button>
+    </div>
+    <div class="stats-grid">
+      <div class="stat-card"><div class="stat-label">Win Rate</div><div class="stat-value" id="kpi-wr">—</div></div>
+      <div class="stat-card"><div class="stat-label">Ø R/R</div><div class="stat-value" id="kpi-rr">—</div></div>
+      <div class="stat-card"><div class="stat-label">Ø Haltedauer</div><div class="stat-value" id="kpi-hold">—</div></div>
+      <div class="stat-card"><div class="stat-label">Trades gesamt</div><div class="stat-value" id="kpi-total">—</div></div>
+    </div>
+    <div class="chart-card"><div class="card-title" style="margin-bottom:12px">Equity Curve (kumuliertes R)</div><canvas id="chart-equity"></canvas></div>
+    <div class="grid-2">
+      <div class="card"><div class="card-title">Risk-Empfehlung (letzte 5)</div><div id="risk-rec"></div></div>
+      <div class="card"><div class="card-title">Setup-Analyse</div><div id="setup-analysis"></div></div>
+    </div>`;
+
+  document.getElementById('btn-refresh-stats').addEventListener('click', renderStats);
+  renderStats();
+}
+
+function renderStats() {
+  const trades = LS.get(KEY_TRADES);
+  const total  = trades.length;
+  document.getElementById('kpi-total').textContent = total;
+
+  if (!total) return;
+
+  const wins   = trades.filter(t => (t.pnl_r||0) > 0).length;
+  const wr     = (wins/total*100).toFixed(1);
+  const avgRR  = (trades.reduce((s,t) => s+(t.pnl_r||0),0)/total).toFixed(2);
+  const holds  = trades.filter(t => t.haltedauer != null);
+  const avgH   = holds.length ? Math.round(holds.reduce((s,t)=>s+t.haltedauer,0)/holds.length) : null;
+
+  const kwEl = document.getElementById('kpi-wr');
+  kwEl.textContent = wr + '%';
+  kwEl.className = 'stat-value ' + (parseFloat(wr) >= 50 ? 'green' : 'red');
+
+  const rrEl = document.getElementById('kpi-rr');
+  rrEl.textContent = (parseFloat(avgRR)>=0?'+':'')+avgRR+'R';
+  rrEl.className = 'stat-value ' + (parseFloat(avgRR) >= 0 ? 'green' : 'red');
+
+  document.getElementById('kpi-hold').textContent = avgH != null ? avgH+'d' : '—';
+
+  // Equity curve
+  const canvas = document.getElementById('chart-equity');
+  if (canvas._chart) canvas._chart.destroy();
+  let cum = 0;
+  const labels = ['Start'];
+  const data   = [0];
+  trades.forEach((t,i) => { cum += (t.pnl_r||0); labels.push(t.ticker||`#${i+1}`); data.push(+cum.toFixed(3)); });
+  const pos = cum >= 0;
+  canvas._chart = new Chart(canvas.getContext('2d'), {
+    type: 'line',
+    data: { labels, datasets: [{ data, borderColor: pos?'#34D399':'#F87171',
+      backgroundColor: pos?'rgba(52,211,153,0.08)':'rgba(248,113,113,0.08)',
+      borderWidth: 2, pointRadius: 3, fill: true, tension: 0.3 }] },
+    options: { responsive: true, plugins: { legend: { display: false },
+        tooltip: { callbacks: { label: c => `${c.raw>=0?'+':''}${c.raw}R` } } },
+      scales: {
+        x: { ticks: { color:'#64748B', font:{family:'DM Mono',size:10} }, grid:{color:'#252A37'} },
+        y: { ticks: { color:'#64748B', font:{family:'DM Mono',size:10}, callback: v=>`${v>=0?'+':''}${v}R` }, grid:{color:'#252A37'} }
+      } }
+  });
+
+  // Risk recommendation
+  const last5  = trades.slice(-5);
+  const rRec   = document.getElementById('risk-rec');
+  if (last5.length >= 3) {
+    const a5 = last5.reduce((s,t)=>s+(t.pnl_r||0),0)/last5.length;
+    const w5 = last5.filter(t=>(t.pnl_r||0)>0).length/last5.length;
+    const [rec,col,exp] = a5>=0.5&&w5>=0.6 ? ['0.75%','var(--green)','Starke Serie — erhöhte Stufe vertretbar']
+      : a5<-0.3||w5<0.35 ? ['0.25%','var(--red)','Schwache Serie — Risk reduzieren']
+      : ['0.50%','var(--amber)','Neutral — Standard beibehalten'];
+    rRec.innerHTML = `<div style="display:flex;align-items:center;gap:12px;margin-bottom:8px">
+      <span style="font-family:'DM Mono',monospace;font-size:24px;color:${col}">${rec}</span>
+      <span class="text-muted">${exp}</span></div>
+      <div class="text-muted">Letzte ${last5.length}: Ø${a5>=0?'+':''}${a5.toFixed(2)}R | ${(w5*100).toFixed(0)}% Win</div>`;
+  } else { rRec.innerHTML = '<p class="text-muted">Mind. 3 Trades nötig</p>'; }
+
+  // Setup analysis
+  const byS = {A:[],B:[],C:[]};
+  trades.forEach(t => { if(byS[t.setup_grad]) byS[t.setup_grad].push(t.pnl_r||0); });
+  document.getElementById('setup-analysis').innerHTML = Object.entries(byS)
+    .filter(([,rs])=>rs.length>0)
+    .map(([g,rs]) => {
+      const avg = rs.reduce((s,r)=>s+r,0)/rs.length;
+      const wr  = rs.filter(r=>r>0).length/rs.length;
+      return `<div style="display:flex;justify-content:space-between;align-items:center;padding:7px 0;border-bottom:1px solid var(--border)">
+        <div style="display:flex;gap:10px;align-items:center">
+          <span class="badge badge-blue">${g}</span>
+          <span class="text-muted">${rs.length} Trades · ${(wr*100).toFixed(0)}% Win</span>
+        </div>
+        <span style="font-family:'DM Mono',monospace;font-size:13px;color:${avg>=0?'var(--green)':'var(--red)'}">
+          ${avg>=0?'+':''}${avg.toFixed(2)}R</span>
+      </div>`;
+    }).join('') || '<p class="text-muted">Noch keine Daten</p>';
+}
+
+// ═══════════════════════════════════════════════════════════════════════════════
+// TAB 5 — IBKR
+// ═══════════════════════════════════════════════════════════════════════════════
+function initIBKR() {
+  document.getElementById('tab-ibkr').innerHTML = `
+    <div class="section-header">
+      <span class="section-title">IBKR Order Generator</span>
+      <button class="btn btn-ghost btn-sm" id="btn-load-calc">Rechner-Werte laden</button>
+    </div>
+    <div class="card" style="max-width:680px;margin:0 auto">
+      <div class="card-title">Kombinierte Order</div>
+      <div class="grid-2 mb-12">
+        <div class="field"><label>Ticker</label><input type="text" id="ib-ticker" placeholder="AAPL" style="text-transform:uppercase"></div>
+        <div class="field"><label>Anzahl</label><input type="number" id="ib-shares" placeholder="100"></div>
+      </div>
+      <div style="border:1px solid var(--border);border-radius:var(--radius-sm);padding:12px;margin-bottom:12px">
+        <div style="font-size:11px;font-weight:600;color:var(--accent);text-transform:uppercase;letter-spacing:.05em;margin-bottom:10px">Kauf-Order (STP LMT)</div>
+        <div style="display:grid;grid-template-columns:1fr 1fr 1fr auto;gap:12px;align-items:end">
+          <div class="field"><label>Entry-Trigger</label><input type="number" id="ib-entry-trigger" placeholder="100.00" step="0.01"></div>
+          <div class="field"><label>Limit-Kurs</label><input type="number" id="ib-limit" placeholder="100.25" step="0.01"></div>
+          <div class="field" style="visibility:hidden"><label>—</label><input type="number" style="visibility:hidden"></div>
+          <div class="field"><label>Gültigkeit</label><select id="ib-tif-buy"><option value="DAY" selected>DAY</option><option value="GTC">GTC</option></select></div>
+        </div>
+      </div>
+      <div style="border:1px solid var(--border);border-radius:var(--radius-sm);padding:12px;margin-bottom:12px">
+        <div style="font-size:11px;font-weight:600;color:var(--red);text-transform:uppercase;letter-spacing:.05em;margin-bottom:10px">Stopp-Order (STP LMT)</div>
+        <div style="display:grid;grid-template-columns:1fr 1fr 1fr auto;gap:12px;align-items:end">
+          <div class="field"><label>Stop-Trigger</label><input type="number" id="ib-trigger" placeholder="95.50" step="0.01"></div>
+          <div class="field"><label>Stopp-Limit</label><input type="number" id="ib-stopp" placeholder="95.00" step="0.01"></div>
+          <div class="field" style="visibility:hidden"><label>—</label><input type="number" style="visibility:hidden"></div>
+          <div class="field"><label>Gültigkeit</label><select id="ib-tif-stp"><option value="DAY">DAY</option><option value="GTC" selected>GTC</option></select></div>
+        </div>
+      </div>
+      <div class="grid-2 mb-12">
+        <div class="field"><label>Währung</label><select id="ib-cur"><option value="USD" selected>USD</option><option value="EUR">EUR</option></select></div>
+        <div class="field"><label>Börse</label><select id="ib-exch"><option value="SMART" selected>SMART</option><option value="NASDAQ">NASDAQ</option><option value="NYSE">NYSE</option><option value="XETRA">XETRA</option></select></div>
+      </div>
+      <button class="btn btn-primary w-full" id="btn-gen-both">Orders generieren</button>
+
+      <div style="display:grid;grid-template-columns:1fr 1fr;gap:16px;margin-top:20px">
+        <div>
+          <div style="font-size:11px;font-weight:600;color:var(--accent);text-transform:uppercase;letter-spacing:.05em;margin-bottom:8px">1. Kauf-Order scannen</div>
+          <div class="deep-link-box" id="dl-buy" style="min-height:44px;font-size:10px">—</div>
+          <button class="btn btn-ghost btn-sm" id="btn-copy-buy" style="margin-top:6px">Kopieren</button>
+          <div id="qr-buy" style="margin-top:10px;display:flex;justify-content:center"></div>
+        </div>
+        <div>
+          <div style="font-size:11px;font-weight:600;color:var(--red);text-transform:uppercase;letter-spacing:.05em;margin-bottom:8px">2. Stopp-Order scannen</div>
+          <div class="deep-link-box" id="dl-stopp" style="min-height:44px;font-size:10px">—</div>
+          <button class="btn btn-ghost btn-sm" id="btn-copy-stopp" style="margin-top:6px">Kopieren</button>
+          <div id="qr-stopp" style="margin-top:10px;display:flex;justify-content:center"></div>
+        </div>
+      </div>
+    </div>`;
+
+  document.getElementById('ib-ticker').addEventListener('input', e => e.target.value = e.target.value.toUpperCase());
+
+  function fillIBKRFields() {
+    const { ticker, shares, limit, stopp } = calcState;
+    if (!ticker && !shares) return false;
+    if (ticker) document.getElementById('ib-ticker').value = ticker;
+    if (shares) document.getElementById('ib-shares').value = shares;
+    if (limit) {
+      document.getElementById('ib-entry-trigger').value = limit.toFixed(2);
+      document.getElementById('ib-limit').value         = limit.toFixed(2);
+    }
+    if (stopp) {
+      document.getElementById('ib-trigger').value = stopp.toFixed(2);
+      document.getElementById('ib-stopp').value   = stopp.toFixed(2);
+    }
+    return true;
+  }
+
+  // Beim Init: falls Werte aus Kandidaten vorliegen, direkt befüllen
+  if (fillIBKRFields()) showToast('Werte aus Kandidaten geladen', 'success');
+
+  document.getElementById('btn-load-calc').addEventListener('click', () => {
+    if (fillIBKRFields()) showToast('Rechner-Werte geladen', 'success');
+    else showToast('Rechner zuerst ausfüllen', 'error');
+  });
+
+  function renderQR(containerId, url) {
+    const el = document.getElementById(containerId);
+    el.innerHTML = '';
+    if (typeof QRCode === 'undefined') return;
+    new QRCode(el, {
+      text: url,
+      width: 160,
+      height: 160,
+      colorDark: '#E2E8F0',
+      colorLight: '#13161E',
+      correctLevel: QRCode.CorrectLevel.M
+    });
+  }
+
+  document.getElementById('btn-gen-both').addEventListener('click', () => {
+    const ticker  = document.getElementById('ib-ticker').value;
+    const shares  = document.getElementById('ib-shares').value;
+    const entryTrigger = document.getElementById('ib-entry-trigger').value;
+    const limit        = document.getElementById('ib-limit').value;
+    const trigger      = document.getElementById('ib-trigger').value;
+    const stopp        = document.getElementById('ib-stopp').value;
+    const cur          = document.getElementById('ib-cur').value;
+    const exch         = document.getElementById('ib-exch').value;
+    const tifBuy       = document.getElementById('ib-tif-buy').value;
+    const tifStp       = document.getElementById('ib-tif-stp').value;
+    if (!ticker || !shares) return showToast('Ticker und Anzahl erforderlich', 'error');
+    if (!entryTrigger && !limit && !trigger && !stopp) return showToast('Mindestens ein Kurs erforderlich', 'error');
+
+    const base = `https://daboerninger.github.io/trading-tool/redirect.html`;
+
+    function buildDeepParams(params) {
+      return params.join('&');
+    }
+
+    if (entryTrigger || limit) {
+      const auxP   = entryTrigger || limit;
+      const lmtP   = limit        || entryTrigger;
+      const query  = buildDeepParams([
+        `action=BUY`, `orderType=STP%20LMT`, `symbol=${ticker}`,
+        `quantity=${shares}`, `price=${lmtP}`, `auxPrice=${auxP}`,
+        `currency=${cur}`, `exchange=${exch}`, `tif=${tifBuy}`
+      ]);
+      const urlBuy = `${base}?${query}`;
+      document.getElementById('dl-buy').textContent = urlBuy;
+      renderQR('qr-buy', urlBuy);
+    }
+    if (trigger || stopp) {
+      const auxP   = trigger || stopp;
+      const lmtP   = stopp   || trigger;
+      const query  = buildDeepParams([
+        `action=SELL`, `orderType=STP%20LMT`, `symbol=${ticker}`,
+        `quantity=${shares}`, `price=${lmtP}`, `auxPrice=${auxP}`,
+        `currency=${cur}`, `exchange=${exch}`, `tif=${tifStp}`
+      ]);
+      const urlStp = `${base}?${query}`;
+      document.getElementById('dl-stopp').textContent = urlStp;
+      renderQR('qr-stopp', urlStp);
+    }
+  });
+
+  document.getElementById('btn-copy-buy').addEventListener('click', () => {
+    const url = document.getElementById('dl-buy').textContent;
+    if (url !== '—') navigator.clipboard.writeText(url).then(() => showToast('Kopiert', 'success'));
+  });
+  document.getElementById('btn-copy-stopp').addEventListener('click', () => {
+    const url = document.getElementById('dl-stopp').textContent;
+    if (url !== '—') navigator.clipboard.writeText(url).then(() => showToast('Kopiert', 'success'));
+  });
+}
+</script>
+</body>
+</html>
