@@ -272,7 +272,7 @@
 // FIREBASE
 // ═══════════════════════════════════════════════════════════════════════════════
 import { initializeApp }  from 'https://www.gstatic.com/firebasejs/10.8.0/firebase-app.js';
-import { getFirestore, collection, addDoc, serverTimestamp }
+import { getFirestore, collection, doc, setDoc, deleteDoc, getDocs, getDoc, serverTimestamp }
   from 'https://www.gstatic.com/firebasejs/10.8.0/firebase-firestore.js';
 import { getAuth, GoogleAuthProvider, signInWithPopup, signOut, onAuthStateChanged }
   from 'https://www.gstatic.com/firebasejs/10.8.0/firebase-auth.js';
@@ -317,14 +317,49 @@ document.getElementById('btn-login').addEventListener('click', async () => {
 
 document.getElementById('btn-logout').addEventListener('click', () => signOut(auth));
 
-async function backupToFirestore(col, data) {
+function fsCol(col) {
+  return collection(db, 'users', auth.currentUser.uid, col);
+}
+function fsDoc(col, id) {
+  return doc(db, 'users', auth.currentUser.uid, col, id);
+}
+
+async function saveToFirestore(col, data) {
   try {
-    const clean = JSON.parse(JSON.stringify(data)); // strip non-serializable
-    await addDoc(collection(db, col), { ...clean, created_at: serverTimestamp() });
+    const clean = JSON.parse(JSON.stringify(data));
+    await setDoc(fsDoc(col, data.id), { ...clean, updated_at: serverTimestamp() });
     setBackupStatus('✓', 'var(--green)');
   } catch (e) {
-    console.warn('Firebase backup failed silently:', e.message);
-    setBackupStatus('⚠ Backup offline', 'var(--amber)');
+    console.warn('Firestore save failed:', e.message);
+    setBackupStatus('⚠ Sync offline', 'var(--amber)');
+  }
+}
+
+async function deleteFromFirestore(col, id) {
+  try { await deleteDoc(fsDoc(col, id)); }
+  catch (e) { console.warn('Firestore delete failed:', e.message); }
+}
+
+async function loadFromFirestore() {
+  try {
+    setBackupStatus('Lade Daten…', 'var(--text-muted)');
+    const uid = auth.currentUser.uid;
+    const cols = [
+      ['kandidaten', KEY_KANDIDATEN],
+      ['positions',  KEY_POS],
+      ['trades',     KEY_TRADES],
+      ['passes',     KEY_PASSES],
+    ];
+    for (const [col, key] of cols) {
+      const snap = await getDocs(collection(db, 'users', uid, col));
+      if (!snap.empty) LS.set(key, snap.docs.map(d => d.data()));
+    }
+    const depotSnap = await getDoc(doc(db, 'users', uid, 'settings', 'depot'));
+    if (depotSnap.exists()) localStorage.setItem('tt_depot', depotSnap.data().value);
+    setBackupStatus('', '');
+  } catch (e) {
+    console.warn('Firestore load failed:', e.message);
+    setBackupStatus('⚠ Offline-Modus', 'var(--amber)');
   }
 }
 
@@ -425,7 +460,8 @@ const EDGE_CRITERIA = [
 let calcState = { edgeCount: 0, ticker: '', limit: 0, stopp: 0, shares: 0, riskEur: 0,
   entry: 0, lod: 0, riskPerShare: 0, posSize: 0, oneR: 0, fomo: false, depot: 0, riskStufe: 0.5 };
 
-function bootstrap() {
+async function bootstrap() {
+  await loadFromFirestore();
   activateTab('calc');
 }
 
@@ -536,7 +572,10 @@ function initCalc() {
 
   // Depot-Wert bei Änderung speichern
   document.getElementById('c-depot').addEventListener('change', e => {
-    if (e.target.value) localStorage.setItem('tt_depot', e.target.value);
+    if (e.target.value) {
+      localStorage.setItem('tt_depot', e.target.value);
+      setDoc(doc(db, 'users', auth.currentUser.uid, 'settings', 'depot'), { value: e.target.value }).catch(() => {});
+    }
   });
   document.getElementById('c-ticker').addEventListener('input', e => {
     calcState.ticker = e.target.value = e.target.value.toUpperCase();
@@ -669,7 +708,7 @@ function saveTrade() {
   showToast(`${ticker} als offene Position gespeichert`, 'success');
 
   // Firebase (still im Hintergrund)
-  backupToFirestore('positions', { ...pos, local_id: pos.id });
+  saveToFirestore('positions', pos);
 }
 
 function savePass() {
@@ -696,7 +735,7 @@ function savePass() {
   showToast(`${ticker} als Passed Trade gespeichert`, 'success');
 
   // Firebase (still im Hintergrund)
-  backupToFirestore('passes', p);
+  saveToFirestore('passes', p);
 }
 
 function saveKandidat() {
@@ -732,7 +771,7 @@ function saveKandidat() {
   showToast(`${ticker} zu Kandidaten hinzugefügt`, 'info');
 
   // Firebase (still im Hintergrund)
-  backupToFirestore('kandidaten', k);
+  saveToFirestore('kandidaten', k);
 
   // Tab wechseln & Liste sofort aktualisieren
   initialized['kandidaten'] = false;
@@ -852,7 +891,7 @@ function renderKandidaten() {
       const idx = all.findIndex(x => x.id === btn.dataset.id);
       if (idx >= 0) { all[idx].status = 'traded'; LS.set(KEY_KANDIDATEN, all); }
       showToast(`${k.ticker} als offene Position erfasst`, 'success');
-      backupToFirestore('positions', { ...pos, local_id: pos.id });
+      saveToFirestore('positions', pos);
       renderKandidaten();
       // Positionen-Tab refreshen falls bereits geladen
       initialized['positions'] = false;
@@ -886,7 +925,7 @@ function renderKandidaten() {
       const idx = all.findIndex(x => x.id === btn.dataset.id);
       if (idx >= 0) { all[idx].status = 'passed'; LS.set(KEY_KANDIDATEN, all); }
       showToast(`${k.ticker} als Pass gespeichert`, 'success');
-      backupToFirestore('passes', p);
+      saveToFirestore('passes', p);
       renderKandidaten();
     });
   });
@@ -894,8 +933,10 @@ function renderKandidaten() {
   // Löschen
   list.querySelectorAll('.btn-k-del').forEach(btn => {
     btn.addEventListener('click', () => {
-      const all = LS.get(KEY_KANDIDATEN).filter(x => x.id !== btn.dataset.id);
+      const delId = btn.dataset.id;
+      const all = LS.get(KEY_KANDIDATEN).filter(x => x.id !== delId);
       LS.set(KEY_KANDIDATEN, all);
+      deleteFromFirestore('kandidaten', delId);
       renderKandidaten();
     });
   });
@@ -991,7 +1032,7 @@ function renderPositions() {
           const newVal = parseFloat(opt.dataset.val);
           const all = LS.get(KEY_POS);
           const idx = all.findIndex(p => p.id === id);
-          if (idx >= 0) { all[idx].stopp_aktuell = newVal; LS.set(KEY_POS, all); }
+          if (idx >= 0) { all[idx].stopp_aktuell = newVal; LS.set(KEY_POS, all); saveToFirestore('positions', all[idx]); }
           showToast('Stopp aktualisiert: ' + fmt(newVal) + ' €', 'success');
           renderPositions();
         });
@@ -1018,6 +1059,7 @@ function renderPositions() {
         all[idx].teilverkäufe = [...(all[idx].teilverkäufe||[]), { shares, kurs, datum }];
         all[idx].aktien = Math.max(0, all[idx].aktien - shares);
         LS.set(KEY_POS, all);
+        saveToFirestore('positions', all[idx]);
         showToast('Teilverkauf gespeichert', 'success');
         closeModal('modal-teilverkauf');
         renderPositions();
@@ -1054,18 +1096,16 @@ function renderPositions() {
         const trade = { ...pos, exit_datum: exitDatum, exit_kurs: exitKurs, exit_grund: exitGrund,
           pnl_abs: pnlAbs, pnl_r: pnlR, haltedauer: hold, lernpunkt, status: 'closed' };
 
-        // LocalStorage (primär)
         const trades = LS.get(KEY_TRADES);
         trades.push(trade);
         LS.set(KEY_TRADES, trades);
         LS.set(KEY_POS, all.filter(p => p.id !== id));
+        saveToFirestore('trades', trade);
+        deleteFromFirestore('positions', id);
 
         showToast(`${pos.ticker} geschlossen — ${pnlR >= 0 ? '+' : ''}${fmt(pnlR, 2)}R`, pnlR >= 0 ? 'success' : 'error');
         closeModal('modal-close-pos');
         renderPositions();
-
-        // Firebase (still im Hintergrund)
-        backupToFirestore('trades', trade);
       };
     });
   });
@@ -1183,7 +1223,7 @@ function renderJournalPasses() {
     inp.addEventListener('change', e => {
       const all = LS.get(KEY_PASSES);
       const idx = all.findIndex(p => p.id === e.target.dataset.id);
-      if (idx >= 0) { all[idx][e.target.dataset.field] = e.target.value; LS.set(KEY_PASSES, all); }
+      if (idx >= 0) { all[idx][e.target.dataset.field] = e.target.value; LS.set(KEY_PASSES, all); saveToFirestore('passes', all[idx]); }
       showToast('Gespeichert', 'success');
     });
   });
@@ -1191,7 +1231,7 @@ function renderJournalPasses() {
     sel.addEventListener('change', e => {
       const all = LS.get(KEY_PASSES);
       const idx = all.findIndex(p => p.id === e.target.dataset.id);
-      if (idx >= 0) { all[idx].entscheidung_richtig = e.target.value; LS.set(KEY_PASSES, all); }
+      if (idx >= 0) { all[idx].entscheidung_richtig = e.target.value; LS.set(KEY_PASSES, all); saveToFirestore('passes', all[idx]); }
       showToast('Gespeichert', 'success');
     });
   });
