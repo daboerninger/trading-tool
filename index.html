@@ -602,19 +602,19 @@ function initCalc() {
     if (n <= 3) {
       bg = 'var(--amber-dim)'; color = 'var(--amber)';
       title = '50% — Pilot';
-      text  = 'Weniger als die Hälfte erfüllt — zu viele offene Fragen. Kleine Position um dabei zu sein, kein volles Commitment.';
+      text  = '· zu viele Fragezeichen';
     } else if (n <= 5) {
       bg = 'var(--accent-dim)'; color = 'var(--accent)';
       title = '100% — Standard';
-      text  = 'Solides Setup, die wichtigsten Ebenen bestätigen. Normale Positionsgröße.';
+      text  = '· solides Setup';
     } else {
       bg = 'var(--green-dim)'; color = 'var(--green)';
       title = '125% — Overweight';
-      text  = 'Fast alles oder alles passt — Aktie, Peers, Sektor, Markt alle aligned. Das sind die Trades die du maximal ausnutzen willst.';
+      text  = '· alles aligned';
     }
     el.style.display  = 'block';
     el.style.background = bg;
-    el.innerHTML = `<span style="font-weight:600;color:${color}">${title}</span><span style="color:var(--text-dim);margin-left:10px">${text}</span>`;
+    el.innerHTML = `<span style="font-weight:600;color:${color}">${title}</span><span style="color:var(--text-dim);margin-left:8px;font-size:12px">${text}</span>`;
   }
   document.getElementById('btn-trade').addEventListener('click', saveTrade);
   document.getElementById('btn-pass').addEventListener('click', savePass);
