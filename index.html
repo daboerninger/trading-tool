@@ -244,6 +244,28 @@
   </div>
 </div>
 
+<div class="modal-overlay" id="modal-edit-kandidat">
+  <div class="modal">
+    <div class="modal-title">Kandidat bearbeiten</div>
+    <div class="grid-2 mb-12">
+      <div class="field"><label>Ticker</label><input type="text" id="ek-ticker" style="text-transform:uppercase"></div>
+      <div class="field"><label>Stückzahl</label><input type="number" id="ek-aktien"></div>
+    </div>
+    <div class="grid-2 mb-12">
+      <div class="field"><label>Entry / Limit (€)</label><input type="number" id="ek-entry" step="0.01"></div>
+      <div class="field"><label>Hard Stopp (€)</label><input type="number" id="ek-stopp" step="0.01"></div>
+    </div>
+    <div class="grid-2 mb-12">
+      <div class="field"><label>ATR%</label><input type="number" id="ek-atr" step="0.1" placeholder="optional"></div>
+      <div class="field"><label>Theme</label><input type="text" id="ek-theme" placeholder="optional"></div>
+    </div>
+    <div class="modal-actions">
+      <button class="btn btn-ghost" id="btn-ek-cancel">Abbrechen</button>
+      <button class="btn btn-primary" id="btn-ek-save">Speichern</button>
+    </div>
+  </div>
+</div>
+
 <div class="modal-overlay" id="modal-erfassen">
   <div class="modal">
     <div class="modal-title">Position erfassen</div>
@@ -437,6 +459,7 @@ document.querySelectorAll('.modal-overlay').forEach(o =>
 document.getElementById('btn-tv-cancel').onclick = () => closeModal('modal-teilverkauf');
 document.getElementById('btn-cp-cancel').onclick = () => closeModal('modal-close-pos');
 document.getElementById('btn-ef-cancel').onclick = () => closeModal('modal-erfassen');
+document.getElementById('btn-ek-cancel').onclick = () => closeModal('modal-edit-kandidat');
 
 // ═══════════════════════════════════════════════════════════════════════════════
 // TAB ROUTING
@@ -901,6 +924,7 @@ function renderKandidaten() {
                 <div style="display:flex;gap:4px;white-space:nowrap">
                   <button class="btn btn-ghost btn-sm btn-k-ibkr"  data-id="${k.id}" title="Order in IBKR platzieren">Order →</button>
                   <button class="btn btn-primary btn-sm btn-k-trade" data-id="${k.id}" title="Als offene Position erfassen">Erfassen</button>
+                  <button class="btn btn-ghost btn-sm btn-k-edit"  data-id="${k.id}" title="Bearbeiten">✎</button>
                   <button class="btn btn-ghost btn-sm btn-k-pass"  data-id="${k.id}" title="Als Pass speichern">Pass</button>
                   <button class="btn btn-ghost btn-sm btn-k-del"   data-id="${k.id}" title="Löschen" style="color:var(--red)">✕</button>
                 </div>
@@ -986,6 +1010,53 @@ function renderKandidaten() {
       showToast(`${k.ticker} als Pass gespeichert`, 'success');
       saveToFirestore('passes', p);
       renderKandidaten();
+    });
+  });
+
+  // Bearbeiten
+  list.querySelectorAll('.btn-k-edit').forEach(btn => {
+    btn.addEventListener('click', () => {
+      const k = LS.get(KEY_KANDIDATEN).find(x => x.id === btn.dataset.id);
+      if (!k) return;
+      document.getElementById('ek-ticker').value = k.ticker || '';
+      document.getElementById('ek-aktien').value = k.aktien || '';
+      document.getElementById('ek-entry').value  = k.entry  || '';
+      document.getElementById('ek-stopp').value  = k.stopp_hard || '';
+      document.getElementById('ek-atr').value    = k.atr_pct || '';
+      document.getElementById('ek-theme').value  = k.theme || '';
+      openModal('modal-edit-kandidat');
+
+      document.getElementById('btn-ek-save').onclick = () => {
+        const entry  = parseFloat(document.getElementById('ek-entry').value);
+        const stopp  = parseFloat(document.getElementById('ek-stopp').value);
+        const aktien = parseInt(document.getElementById('ek-aktien').value);
+        const atr    = parseFloat(document.getElementById('ek-atr').value) || 0;
+        if (!entry || !stopp || !aktien) return showToast('Entry, Stopp und Stückzahl erforderlich', 'error');
+        const riskPerShare = entry - stopp;
+        const riskPct      = riskPerShare / entry * 100;
+        const riskAtr      = atr > 0 ? atr / riskPct : 0;
+        const all = LS.get(KEY_KANDIDATEN);
+        const idx = all.findIndex(x => x.id === k.id);
+        if (idx < 0) return;
+        all[idx] = { ...all[idx],
+          ticker:         document.getElementById('ek-ticker').value.toUpperCase() || all[idx].ticker,
+          aktien,
+          entry,
+          stopp_hard:     stopp,
+          oneR:           +riskPerShare.toFixed(4),
+          risk_eur:       +(riskPerShare * aktien).toFixed(2),
+          risk_share_pct: +riskPct.toFixed(3),
+          pos_groesse:    +(entry * aktien).toFixed(2),
+          atr_pct:        atr || all[idx].atr_pct,
+          risk_atr:       +riskAtr.toFixed(3),
+          theme:          document.getElementById('ek-theme').value || all[idx].theme,
+        };
+        LS.set(KEY_KANDIDATEN, all);
+        saveToFirestore('kandidaten', all[idx]);
+        closeModal('modal-edit-kandidat');
+        showToast('Kandidat aktualisiert', 'success');
+        renderKandidaten();
+      };
     });
   });
 
@@ -1478,13 +1549,19 @@ function initIBKR() {
         <div>
           <div style="font-size:11px;font-weight:600;color:var(--accent);text-transform:uppercase;letter-spacing:.05em;margin-bottom:8px">1. Kauf-Order scannen</div>
           <div class="deep-link-box" id="dl-buy" style="min-height:44px;font-size:10px">—</div>
-          <button class="btn btn-ghost btn-sm" id="btn-copy-buy" style="margin-top:6px">Kopieren</button>
+          <div style="display:flex;gap:8px;margin-top:6px">
+            <button class="btn btn-ghost btn-sm" id="btn-copy-buy">Kopieren</button>
+            <a id="open-buy" href="#" class="btn btn-primary btn-sm" style="display:none;text-decoration:none">In IBKR öffnen</a>
+          </div>
           <div id="qr-buy" style="margin-top:10px;display:flex;justify-content:center"></div>
         </div>
         <div>
           <div style="font-size:11px;font-weight:600;color:var(--red);text-transform:uppercase;letter-spacing:.05em;margin-bottom:8px">2. Stopp-Order scannen</div>
           <div class="deep-link-box" id="dl-stopp" style="min-height:44px;font-size:10px">—</div>
-          <button class="btn btn-ghost btn-sm" id="btn-copy-stopp" style="margin-top:6px">Kopieren</button>
+          <div style="display:flex;gap:8px;margin-top:6px">
+            <button class="btn btn-ghost btn-sm" id="btn-copy-stopp">Kopieren</button>
+            <a id="open-stopp" href="#" class="btn btn-danger btn-sm" style="display:none;text-decoration:none">In IBKR öffnen</a>
+          </div>
           <div id="qr-stopp" style="margin-top:10px;display:flex;justify-content:center"></div>
         </div>
       </div>
@@ -1559,7 +1636,10 @@ function initIBKR() {
         `currency=${cur}`, `exchange=${exch}`, `tif=${tifBuy}`
       ]);
       const urlBuy = `${base}?${query}`;
+      const deepBuy = `ibkr://trade?${query}`;
       document.getElementById('dl-buy').textContent = urlBuy;
+      const ob = document.getElementById('open-buy');
+      ob.href = deepBuy; ob.style.display = 'inline-flex';
       renderQR('qr-buy', urlBuy);
     }
     if (trigger || stopp) {
@@ -1571,7 +1651,10 @@ function initIBKR() {
         `currency=${cur}`, `exchange=${exch}`, `tif=${tifStp}`
       ]);
       const urlStp = `${base}?${query}`;
+      const deepStp = `ibkr://trade?${query}`;
       document.getElementById('dl-stopp').textContent = urlStp;
+      const os = document.getElementById('open-stopp');
+      os.href = deepStp; os.style.display = 'inline-flex';
       renderQR('qr-stopp', urlStp);
     }
   });
