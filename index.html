@@ -180,7 +180,28 @@
     .divider { border: none; border-top: 1px solid var(--border); margin: 16px 0; }
 
     @media (max-width: 900px) { .calc-layout { grid-template-columns: 1fr; } .stats-grid { grid-template-columns: 1fr 1fr; } .ibkr-layout { grid-template-columns: 1fr; } }
-    @media (max-width: 600px) { .main-content { padding: 12px; } .grid-2, .grid-3 { grid-template-columns: 1fr; } .tab-btn { padding: 10px 12px; font-size: 12px; } }
+    @media (max-width: 600px) {
+      .main-content { padding: 12px; }
+      .grid-2, .grid-3 { grid-template-columns: 1fr; }
+      .tab-btn { padding: 10px 10px; font-size: 12px; }
+      .topbar { padding: 0 12px; height: 48px; }
+      .topbar-motto { display: none; }
+      #user-email { display: none; }
+      #backup-status { display: none; }
+      .stats-grid { grid-template-columns: 1fr 1fr; }
+      .card { padding: 14px; }
+      .position-actions { flex-wrap: wrap; }
+      .ibkr-price-grid { grid-template-columns: 1fr 1fr !important; }
+      .ibkr-hidden-field { display: none !important; }
+      .ibkr-qr-grid { grid-template-columns: 1fr !important; }
+    }
+    @media (max-width: 400px) {
+      .stats-grid { grid-template-columns: 1fr; }
+      .edge-grid { grid-template-columns: 1fr; }
+    }
+    .tab-nav { overflow-x: auto; scrollbar-width: none; }
+    .tab-nav::-webkit-scrollbar { display: none; }
+    .kandidaten-table-wrap { overflow-x: auto; }
   </style>
 </head>
 <body>
@@ -201,7 +222,7 @@
 <div id="app" style="display:none">
   <header class="topbar">
     <div class="topbar-brand">Trading Tool v1</div>
-    <div style="position:absolute;left:50%;transform:translateX(-50%);font-size:13px;color:var(--text-muted);font-style:italic;letter-spacing:0.3px">
+    <div class="topbar-motto" style="position:absolute;left:50%;transform:translateX(-50%);font-size:13px;color:var(--text-muted);font-style:italic;letter-spacing:0.3px">
       Discipline isn't a talent. It's a daily decision.
     </div>
     <div style="display:flex;align-items:center;gap:16px">
@@ -1552,19 +1573,19 @@ function initIBKR() {
       </div>
       <div style="border:1px solid var(--border);border-radius:var(--radius-sm);padding:12px;margin-bottom:12px">
         <div style="font-size:11px;font-weight:600;color:var(--accent);text-transform:uppercase;letter-spacing:.05em;margin-bottom:10px">Kauf-Order (STP LMT)</div>
-        <div style="display:grid;grid-template-columns:1fr 1fr 1fr auto;gap:12px;align-items:end">
+        <div class="ibkr-price-grid" style="display:grid;grid-template-columns:1fr 1fr 1fr auto;gap:12px;align-items:end">
           <div class="field"><label>Entry-Trigger</label><input type="number" id="ib-entry-trigger" placeholder="100.00" step="0.01"></div>
           <div class="field"><label>Limit-Kurs</label><input type="number" id="ib-limit" placeholder="100.25" step="0.01"></div>
-          <div class="field" style="visibility:hidden"><label>—</label><input type="number" style="visibility:hidden"></div>
+          <div class="field ibkr-hidden-field" style="visibility:hidden"><label>—</label><input type="number" style="visibility:hidden"></div>
           <div class="field"><label>Gültigkeit</label><select id="ib-tif-buy"><option value="DAY" selected>DAY</option><option value="GTC">GTC</option></select></div>
         </div>
       </div>
       <div style="border:1px solid var(--border);border-radius:var(--radius-sm);padding:12px;margin-bottom:12px">
         <div style="font-size:11px;font-weight:600;color:var(--red);text-transform:uppercase;letter-spacing:.05em;margin-bottom:10px">Stopp-Order (STP LMT)</div>
-        <div style="display:grid;grid-template-columns:1fr 1fr 1fr auto;gap:12px;align-items:end">
+        <div class="ibkr-price-grid" style="display:grid;grid-template-columns:1fr 1fr 1fr auto;gap:12px;align-items:end">
           <div class="field"><label>Stop-Trigger</label><input type="number" id="ib-trigger" placeholder="95.50" step="0.01"></div>
           <div class="field"><label>Stopp-Limit</label><input type="number" id="ib-stopp" placeholder="95.00" step="0.01"></div>
-          <div class="field" style="visibility:hidden"><label>—</label><input type="number" style="visibility:hidden"></div>
+          <div class="field ibkr-hidden-field" style="visibility:hidden"><label>—</label><input type="number" style="visibility:hidden"></div>
           <div class="field"><label>Gültigkeit</label><select id="ib-tif-stp"><option value="DAY">DAY</option><option value="GTC" selected>GTC</option></select></div>
         </div>
       </div>
@@ -1574,7 +1595,7 @@ function initIBKR() {
       </div>
       <button class="btn btn-primary w-full" id="btn-gen-both">Orders generieren</button>
 
-      <div style="display:grid;grid-template-columns:1fr 1fr;gap:16px;margin-top:20px">
+      <div class="ibkr-qr-grid" style="display:grid;grid-template-columns:1fr 1fr;gap:16px;margin-top:20px">
         <div>
           <div style="font-size:11px;font-weight:600;color:var(--accent);text-transform:uppercase;letter-spacing:.05em;margin-bottom:8px">1. Kauf-Order scannen</div>
           <div class="deep-link-box" id="dl-buy" style="min-height:44px;font-size:10px">—</div>
