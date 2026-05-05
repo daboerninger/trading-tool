@@ -43,14 +43,8 @@
   document.getElementById('order-detail').innerHTML =
     `<span style="color:${color}">${actionLabel}</span> · ${qty} Stück · ${orderType} · ${price ? price + ' $' : ''}`;
 
-  // Build deep link
-  let url;
-  if (android) {
-    url = `intent://trade?${query}#Intent;scheme=ibkr;package=com.interactivebrokers.ibroker;end`;
-  } else {
-    url = `ibkr://trade?${query}`;
-  }
-
+  // Build deep link — ibkr:// direkt (funktioniert wenn App Scheme registriert hat)
+  const url = `ibkr://trade?${query}`;
   document.getElementById('open-link').href = url;
 </script>
 </body>
