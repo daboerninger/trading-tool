@@ -1064,6 +1064,7 @@ function renderPositions() {
         <div class="position-actions">
           <button class="btn btn-ghost btn-sm btn-tv" data-id="${p.id}">Teilverkauf</button>
           <button class="btn btn-danger btn-sm btn-close" data-id="${p.id}">Schließen</button>
+          <button class="btn btn-ghost btn-sm btn-del-pos" data-id="${p.id}" style="color:var(--red);margin-left:auto">✕ Löschen</button>
         </div>
       </div>`;
   }).join('');
@@ -1166,6 +1167,20 @@ function renderPositions() {
         closeModal('modal-close-pos');
         renderPositions();
       };
+    });
+  });
+
+  // Position löschen
+  document.querySelectorAll('.btn-del-pos').forEach(btn => {
+    btn.addEventListener('click', () => {
+      const id = btn.dataset.id;
+      const pos = LS.get(KEY_POS).find(p => p.id === id);
+      if (!pos) return;
+      if (!confirm(`${pos.ticker} wirklich löschen?`)) return;
+      LS.set(KEY_POS, LS.get(KEY_POS).filter(p => p.id !== id));
+      deleteFromFirestore('positions', id);
+      showToast(`${pos.ticker} gelöscht`, 'info');
+      renderPositions();
     });
   });
 }
