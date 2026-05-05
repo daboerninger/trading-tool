@@ -244,6 +244,22 @@
   </div>
 </div>
 
+<div class="modal-overlay" id="modal-erfassen">
+  <div class="modal">
+    <div class="modal-title">Position erfassen</div>
+    <div class="field mb-12">
+      <label>Tatsächlicher Kaufkurs (€)</label>
+      <input type="number" id="ef-kurs" step="0.01">
+      <div id="ef-hint" style="font-size:11px;color:var(--text-muted);margin-top:4px"></div>
+    </div>
+    <div class="field mb-12"><label>Kaufdatum</label><input type="date" id="ef-datum"></div>
+    <div class="modal-actions">
+      <button class="btn btn-ghost" id="btn-ef-cancel">Abbrechen</button>
+      <button class="btn btn-primary" id="btn-ef-save">Erfassen</button>
+    </div>
+  </div>
+</div>
+
 <div class="modal-overlay" id="modal-close-pos">
   <div class="modal">
     <div class="modal-title">Position schließen</div>
@@ -420,6 +436,7 @@ document.querySelectorAll('.modal-overlay').forEach(o =>
 );
 document.getElementById('btn-tv-cancel').onclick = () => closeModal('modal-teilverkauf');
 document.getElementById('btn-cp-cancel').onclick = () => closeModal('modal-close-pos');
+document.getElementById('btn-ef-cancel').onclick = () => closeModal('modal-erfassen');
 
 // ═══════════════════════════════════════════════════════════════════════════════
 // TAB ROUTING
@@ -899,33 +916,45 @@ function renderKandidaten() {
     btn.addEventListener('click', () => {
       const k = LS.get(KEY_KANDIDATEN).find(x => x.id === btn.dataset.id);
       if (!k) return;
-      const rps = k.entry - k.stopp_hard;
-      const pos = {
-        id: genId(), ticker: k.ticker, kaufdatum: new Date().toISOString(),
-        entry: k.entry, aktien: k.aktien,
-        stopp_hard: k.stopp_hard,
-        stopp_066r: +(k.stopp_hard + rps * 0.34).toFixed(4),
-        stopp_033r: +(k.stopp_hard + rps * 0.67).toFixed(4),
-        stopp_breakeven: +(k.entry * 1.0025).toFixed(4),
-        stopp_aktuell: k.stopp_hard,
-        risk_pct: k.risk_pct, risk_eur: k.risk_eur,
-        edge_count: k.edge_count, setup_grad: k.setup_grad,
-        theme: k.theme, fomo: k.fomo, oneR: k.oneR,
-        teilverkäufe: [], status: 'offen',
+      document.getElementById('ef-kurs').value  = k.entry.toFixed(2);
+      document.getElementById('ef-datum').value = new Date().toISOString().split('T')[0];
+      document.getElementById('ef-hint').textContent = `Geplanter Entry: ${fmt(k.entry)} € — bitte tatsächlichen Kaufkurs bestätigen oder anpassen.`;
+      openModal('modal-erfassen');
+
+      document.getElementById('btn-ef-save').onclick = () => {
+        const kaufkurs = parseFloat(document.getElementById('ef-kurs').value);
+        const kaufdatum = document.getElementById('ef-datum').value;
+        if (!kaufkurs) return showToast('Kaufkurs eingeben', 'error');
+        const rps = kaufkurs - k.stopp_hard;
+        const pos = {
+          id: genId(), ticker: k.ticker,
+          kaufdatum: kaufdatum || new Date().toISOString().split('T')[0],
+          entry: kaufkurs, aktien: k.aktien,
+          stopp_hard: k.stopp_hard,
+          stopp_066r: +(k.stopp_hard + rps * 0.34).toFixed(4),
+          stopp_033r: +(k.stopp_hard + rps * 0.67).toFixed(4),
+          stopp_breakeven: +(kaufkurs * 1.0025).toFixed(4),
+          stopp_aktuell: k.stopp_hard,
+          risk_pct: k.risk_pct,
+          risk_eur: +((kaufkurs - k.stopp_hard) * k.aktien).toFixed(2),
+          edge_count: k.edge_count, setup_grad: k.setup_grad,
+          theme: k.theme, fomo: k.fomo,
+          oneR: +(kaufkurs - k.stopp_hard).toFixed(4),
+          teilverkäufe: [], status: 'offen',
+        };
+        const positions = LS.get(KEY_POS);
+        positions.push(pos);
+        LS.set(KEY_POS, positions);
+        const all = LS.get(KEY_KANDIDATEN);
+        const idx = all.findIndex(x => x.id === btn.dataset.id);
+        if (idx >= 0) { all[idx].status = 'traded'; LS.set(KEY_KANDIDATEN, all); saveToFirestore('kandidaten', all[idx]); }
+        saveToFirestore('positions', pos);
+        closeModal('modal-erfassen');
+        showToast(`${k.ticker} als offene Position erfasst`, 'success');
+        renderKandidaten();
+        initialized['positions'] = false;
+        document.querySelector('[data-tab="positions"]').click();
       };
-      const positions = LS.get(KEY_POS);
-      positions.push(pos);
-      LS.set(KEY_POS, positions);
-      // Kandidat als erledigt markieren
-      const all = LS.get(KEY_KANDIDATEN);
-      const idx = all.findIndex(x => x.id === btn.dataset.id);
-      if (idx >= 0) { all[idx].status = 'traded'; LS.set(KEY_KANDIDATEN, all); }
-      showToast(`${k.ticker} als offene Position erfasst`, 'success');
-      saveToFirestore('positions', pos);
-      renderKandidaten();
-      // Positionen-Tab refreshen falls bereits geladen
-      initialized['positions'] = false;
-      document.querySelector('[data-tab="positions"]').click();
     });
   });
 
