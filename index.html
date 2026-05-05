@@ -202,6 +202,10 @@
     .tab-nav { overflow-x: auto; scrollbar-width: none; }
     .tab-nav::-webkit-scrollbar { display: none; }
     .kandidaten-table-wrap { overflow-x: auto; }
+    .motto-mobile { display: none; }
+    @media (max-width: 600px) {
+      .motto-mobile { display: block; text-align: center; font-size: 11px; color: var(--text-muted); font-style: italic; padding: 6px 12px; background: var(--card); border-bottom: 1px solid var(--border); }
+    }
   </style>
 </head>
 <body>
@@ -232,6 +236,7 @@
     </div>
   </header>
 
+  <div class="motto-mobile">Discipline isn't a talent. It's a daily decision.</div>
   <nav class="tab-nav">
     <button class="tab-btn active" data-tab="calc">Rechner</button>
     <button class="tab-btn" data-tab="kandidaten">Kandidaten</button>
