@@ -1294,7 +1294,10 @@ function renderJournalTrades() {
   container.innerHTML = `
     <div class="section-header mb-12">
       <span class="text-muted">${trades.length} Trades</span>
-      <button class="btn btn-ghost btn-sm" id="btn-export-trades">CSV Export</button>
+      <div style="display:flex;gap:8px">
+        <button class="btn btn-ghost btn-sm" id="btn-recalc-pnl">P&L R neu berechnen</button>
+        <button class="btn btn-ghost btn-sm" id="btn-export-trades">CSV Export</button>
+      </div>
     </div>
     <div class="card journal-table-wrap">
       <table>
@@ -1327,6 +1330,30 @@ function renderJournalTrades() {
     </div>`;
 
   document.getElementById('btn-export-trades').addEventListener('click', () => exportCSV(trades, 'trades'));
+
+  document.getElementById('btn-recalc-pnl').addEventListener('click', () => {
+    const all = LS.get(KEY_TRADES);
+    let fixed = 0;
+    all.forEach(t => {
+      const rps = (t.stopp_hard > 0 && t.entry > t.stopp_hard)
+        ? t.entry - t.stopp_hard
+        : (t.oneR > t.entry ? t.oneR - t.entry : 0);
+      if (rps > 0) {
+        const pnlAbs = (t.exit_kurs - t.entry) * t.aktien;
+        const pnlR   = +(pnlAbs / (rps * t.aktien)).toFixed(3);
+        if (t.pnl_r !== pnlR) {
+          t.pnl_r = pnlR;
+          t.pnl_abs = +pnlAbs.toFixed(2);
+          saveToFirestore('trades', t);
+          fixed++;
+        }
+      }
+    });
+    LS.set(KEY_TRADES, all);
+    showToast(`${fixed} Trade(s) neu berechnet`, fixed > 0 ? 'success' : 'info');
+    initialized['journal'] = false;
+    document.querySelector('[data-tab="journal"]').click();
+  });
 }
 
 function renderJournalPasses() {
