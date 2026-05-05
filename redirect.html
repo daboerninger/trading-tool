@@ -3,28 +3,47 @@
 <head>
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
-  <title>IBKR Weiterleitung</title>
+  <title>IBKR Order</title>
   <style>
-    body { margin: 0; background: #0D0F14; color: #E2E8F0; font-family: sans-serif;
+    body { margin: 0; background: #151921; color: #E2E8F0; font-family: sans-serif;
            display: flex; align-items: center; justify-content: center; min-height: 100vh; text-align: center; }
-    .box { padding: 32px; }
-    h2 { font-size: 16px; margin-bottom: 8px; color: #4F8EF7; }
-    p  { font-size: 13px; color: #64748B; margin-bottom: 24px; }
-    a  { display: inline-block; padding: 12px 28px; background: #4F8EF7; color: #fff;
-         border-radius: 8px; text-decoration: none; font-size: 14px; font-weight: 600; }
+    .box { padding: 32px; max-width: 320px; }
+    h2 { font-size: 18px; margin-bottom: 8px; color: #4F8EF7; font-weight: 700; }
+    p  { font-size: 13px; color: #7A8BA8; margin-bottom: 28px; line-height: 1.5; }
+    .btn { display: block; width: 100%; padding: 16px; background: #4F8EF7; color: #fff;
+           border-radius: 10px; text-decoration: none; font-size: 16px; font-weight: 700;
+           margin-bottom: 12px; box-sizing: border-box; }
+    .ticker { font-size: 22px; font-weight: 700; color: #E2E8F0; margin-bottom: 4px; font-family: monospace; }
+    .detail { font-size: 12px; color: #7A8BA8; margin-bottom: 24px; }
   </style>
 </head>
 <body>
 <div class="box">
-  <h2>IBKR Order öffnen</h2>
-  <p>Tippe auf den Button um die Order in der IBKR App zu öffnen.</p>
-  <a id="open-link" href="#">In IBKR öffnen</a>
+  <div class="ticker" id="ticker-display"></div>
+  <div class="detail" id="order-detail"></div>
+  <h2>Order in IBKR öffnen</h2>
+  <p>Tippe auf den Button — IBKR App öffnet sich direkt.</p>
+  <a id="open-link" href="#" class="btn">In IBKR öffnen</a>
 </div>
 <script>
   const params  = new URLSearchParams(location.search);
   const android = /android/i.test(navigator.userAgent);
   const query   = params.toString();
+  const action  = params.get('action') || '';
+  const symbol  = params.get('symbol') || '';
+  const qty     = params.get('quantity') || '';
+  const price   = params.get('price') || '';
+  const orderType = params.get('orderType') || '';
 
+  // Display info
+  if (symbol) document.getElementById('ticker-display').textContent = symbol;
+  const actionLabel = action === 'BUY' ? '▲ Kauf' : '▼ Stopp';
+  const color = action === 'BUY' ? '#34D399' : '#F87171';
+  document.getElementById('ticker-display').style.color = color;
+  document.getElementById('order-detail').innerHTML =
+    `<span style="color:${color}">${actionLabel}</span> · ${qty} Stück · ${orderType} · ${price ? price + ' $' : ''}`;
+
+  // Build deep link
   let url;
   if (android) {
     url = `intent://trade?${query}#Intent;scheme=ibkr;package=com.interactivebrokers.ibroker;end`;
@@ -32,11 +51,7 @@
     url = `ibkr://trade?${query}`;
   }
 
-  const link = document.getElementById('open-link');
-  link.href = url;
-
-  // Automatischer Versuch nach kurzem Delay (klappt wenn App installiert)
-  setTimeout(() => { window.location.href = url; }, 300);
+  document.getElementById('open-link').href = url;
 </script>
 </body>
 </html>
