@@ -963,7 +963,7 @@ function renderKandidaten() {
           risk_eur: +((kaufkurs - k.stopp_hard) * k.aktien).toFixed(2),
           edge_count: k.edge_count, setup_grad: k.setup_grad,
           theme: k.theme, fomo: k.fomo,
-          oneR: +(kaufkurs - k.stopp_hard).toFixed(4),
+          oneR: +(kaufkurs + (kaufkurs - k.stopp_hard)).toFixed(4),
           teilverkäufe: [], status: 'offen',
         };
         const positions = LS.get(KEY_POS);
@@ -1217,7 +1217,9 @@ function renderPositions() {
         const pos = all.find(p => p.id === id);
         if (!pos) return;
 
-        const rps     = pos.oneR > 0 ? pos.oneR - pos.entry : pos.entry - pos.stopp_hard;
+        const rps     = (pos.stopp_hard > 0 && pos.entry > pos.stopp_hard)
+                          ? pos.entry - pos.stopp_hard
+                          : pos.oneR > pos.entry ? pos.oneR - pos.entry : 0;
         const pnlAbs  = +(((exitKurs - pos.entry) * pos.aktien).toFixed(2));
         const pnlR    = rps > 0 ? +(pnlAbs / (rps * pos.aktien)).toFixed(3) : 0;
         const kaufD   = new Date(pos.kaufdatum);
