@@ -7,45 +7,105 @@
   <style>
     body { margin: 0; background: #151921; color: #E2E8F0; font-family: sans-serif;
            display: flex; align-items: center; justify-content: center; min-height: 100vh; text-align: center; }
-    .box { padding: 32px; max-width: 320px; }
+    .box { padding: 32px; max-width: 320px; width: 100%; box-sizing: border-box; }
     h2 { font-size: 18px; margin-bottom: 8px; color: #4F8EF7; font-weight: 700; }
-    p  { font-size: 13px; color: #7A8BA8; margin-bottom: 28px; line-height: 1.5; }
     .btn { display: block; width: 100%; padding: 16px; background: #4F8EF7; color: #fff;
            border-radius: 10px; text-decoration: none; font-size: 16px; font-weight: 700;
-           margin-bottom: 12px; box-sizing: border-box; }
+           margin-bottom: 10px; box-sizing: border-box; cursor: pointer; border: none; }
+    .btn-ghost { background: transparent; border: 1px solid #2E3650; color: #7A8BA8; font-size: 14px; padding: 13px; }
     .ticker { font-size: 22px; font-weight: 700; color: #E2E8F0; margin-bottom: 4px; font-family: monospace; }
-    .detail { font-size: 12px; color: #7A8BA8; margin-bottom: 24px; }
+    .detail { font-size: 12px; color: #7A8BA8; margin-bottom: 20px; }
+    .params-box { background: #1C2130; border: 1px solid #2E3650; border-radius: 10px; padding: 14px 16px;
+                  text-align: left; margin-bottom: 16px; font-size: 13px; line-height: 1.9; }
+    .params-box .label { color: #7A8BA8; }
+    .params-box .val   { color: #E2E8F0; font-family: monospace; font-weight: 600; }
+    .status { font-size: 12px; color: #FBBF24; margin-bottom: 14px; min-height: 18px; }
   </style>
 </head>
 <body>
 <div class="box">
   <div class="ticker" id="ticker-display"></div>
   <div class="detail" id="order-detail"></div>
-  <h2>Order in IBKR öffnen</h2>
-  <p>Tippe auf den Button — IBKR App öffnet sich direkt.</p>
+  <div class="params-box" id="params-box"></div>
+  <div class="status" id="status-msg">Öffne IBKR…</div>
   <a id="open-link" href="#" class="btn">In IBKR öffnen</a>
+  <button id="btn-share" class="btn btn-ghost" style="display:none">Teilen</button>
+  <button id="btn-copy" class="btn btn-ghost">Felder kopieren</button>
 </div>
 <script>
-  const params  = new URLSearchParams(location.search);
-  const android = /android/i.test(navigator.userAgent);
-  const query   = params.toString();
-  const action  = params.get('action') || '';
-  const symbol  = params.get('symbol') || '';
-  const qty     = params.get('quantity') || '';
-  const price   = params.get('price') || '';
-  const orderType = params.get('orderType') || '';
+  const p        = new URLSearchParams(location.search);
+  const action   = p.get('action')    || '';
+  const symbol   = p.get('symbol')    || '';
+  const qty      = p.get('quantity')  || '';
+  const price    = p.get('price')     || '';
+  const auxPrice = p.get('auxPrice')  || '';
+  const orderType = p.get('orderType') || 'STP LMT';
+  const cur      = p.get('currency')  || 'USD';
+  const exch     = p.get('exchange')  || 'SMART';
+  const tif      = p.get('tif')       || 'DAY';
 
-  // Display info
-  if (symbol) document.getElementById('ticker-display').textContent = symbol;
+  const color       = action === 'BUY' ? '#34D399' : '#F87171';
   const actionLabel = action === 'BUY' ? '▲ Kauf' : '▼ Stopp';
-  const color = action === 'BUY' ? '#34D399' : '#F87171';
-  document.getElementById('ticker-display').style.color = color;
-  document.getElementById('order-detail').innerHTML =
-    `<span style="color:${color}">${actionLabel}</span> · ${qty} Stück · ${orderType} · ${price ? price + ' $' : ''}`;
 
-  // Build deep link — ibkr:// direkt (funktioniert wenn App Scheme registriert hat)
-  const url = `ibkr://trade?${query}`;
-  document.getElementById('open-link').href = url;
+  if (symbol) {
+    document.getElementById('ticker-display').textContent = symbol;
+    document.getElementById('ticker-display').style.color = color;
+  }
+  document.getElementById('order-detail').innerHTML =
+    `<span style="color:${color}">${actionLabel}</span> · ${qty} Stück · ${orderType}`;
+
+  // Params box (human-readable, für manuelles Eintippen)
+  const rows = [
+    ['Ticker',   symbol],
+    ['Aktion',   actionLabel],
+    ['Stück',    qty],
+    ...(auxPrice ? [['Trigger', auxPrice]] : []),
+    ...(price    ? [['Limit',   price]]    : []),
+    ['Typ',      orderType],
+    ['Börse',    `${exch} · ${cur} · ${tif}`]
+  ];
+  document.getElementById('params-box').innerHTML = rows
+    .map(([l, v]) => `<div><span class="label">${l}: </span><span class="val">${v}</span></div>`)
+    .join('');
+
+  const copyText = rows.map(([l, v]) => `${l}: ${v}`).join('\n');
+
+  // Deep link — intent:// for Android (more reliable), ibkr:// for iOS
+  const query    = p.toString();
+  const ibkrUrl  = `ibkr://trade?${query}`;
+  const isAndroid = /android/i.test(navigator.userAgent);
+  const primaryUrl = isAndroid
+    ? `intent://trade?${query}#Intent;scheme=ibkr;end`
+    : ibkrUrl;
+
+  document.getElementById('open-link').href = primaryUrl;
+
+  // Auto-trigger on load
+  const statusEl = document.getElementById('status-msg');
+  setTimeout(() => {
+    window.location.href = primaryUrl;
+    setTimeout(() => {
+      statusEl.textContent = 'Falls IBKR nicht geöffnet — Button tippen';
+    }, 1800);
+  }, 400);
+
+  // Web Share API
+  if (navigator.share) {
+    const btn = document.getElementById('btn-share');
+    btn.style.display = 'block';
+    btn.addEventListener('click', () => {
+      navigator.share({ title: `IBKR ${symbol} ${actionLabel}`, text: copyText, url: ibkrUrl });
+    });
+  }
+
+  // Copy params
+  document.getElementById('btn-copy').addEventListener('click', () => {
+    navigator.clipboard.writeText(copyText).then(() => {
+      const b = document.getElementById('btn-copy');
+      b.textContent = 'Kopiert!';
+      setTimeout(() => { b.textContent = 'Felder kopieren'; }, 2000);
+    });
+  });
 </script>
 </body>
 </html>

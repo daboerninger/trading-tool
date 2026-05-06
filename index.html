@@ -1604,8 +1604,9 @@ function initIBKR() {
         <div>
           <div style="font-size:11px;font-weight:600;color:var(--accent);text-transform:uppercase;letter-spacing:.05em;margin-bottom:8px">1. Kauf-Order scannen</div>
           <div class="deep-link-box" id="dl-buy" style="min-height:44px;font-size:10px">—</div>
-          <div style="display:flex;gap:8px;margin-top:6px">
-            <button class="btn btn-ghost btn-sm" id="btn-copy-buy">Kopieren</button>
+          <div style="display:flex;gap:8px;margin-top:6px;flex-wrap:wrap">
+            <button class="btn btn-ghost btn-sm" id="btn-copy-buy">Link kopieren</button>
+            <button class="btn btn-ghost btn-sm" id="btn-params-buy" style="display:none">Felder kopieren</button>
             <a id="open-buy" href="#" class="btn btn-primary btn-sm" style="display:none;text-decoration:none">In IBKR öffnen</a>
           </div>
           <div id="qr-buy" style="margin-top:10px;display:flex;justify-content:center"></div>
@@ -1613,8 +1614,9 @@ function initIBKR() {
         <div>
           <div style="font-size:11px;font-weight:600;color:var(--red);text-transform:uppercase;letter-spacing:.05em;margin-bottom:8px">2. Stopp-Order scannen</div>
           <div class="deep-link-box" id="dl-stopp" style="min-height:44px;font-size:10px">—</div>
-          <div style="display:flex;gap:8px;margin-top:6px">
-            <button class="btn btn-ghost btn-sm" id="btn-copy-stopp">Kopieren</button>
+          <div style="display:flex;gap:8px;margin-top:6px;flex-wrap:wrap">
+            <button class="btn btn-ghost btn-sm" id="btn-copy-stopp">Link kopieren</button>
+            <button class="btn btn-ghost btn-sm" id="btn-params-stopp" style="display:none">Felder kopieren</button>
             <a id="open-stopp" href="#" class="btn btn-danger btn-sm" style="display:none;text-decoration:none">In IBKR öffnen</a>
           </div>
           <div id="qr-stopp" style="margin-top:10px;display:flex;justify-content:center"></div>
@@ -1662,6 +1664,9 @@ function initIBKR() {
     });
   }
 
+  let buyParamsText = null;
+  let stpParamsText = null;
+
   document.getElementById('btn-gen-both').addEventListener('click', () => {
     const ticker  = document.getElementById('ib-ticker').value;
     const shares  = document.getElementById('ib-shares').value;
@@ -1691,11 +1696,12 @@ function initIBKR() {
         `currency=${cur}`, `exchange=${exch}`, `tif=${tifBuy}`
       ]);
       const urlBuy = `${base}?${query}`;
-      const deepBuy = `ibkr://trade?${query}`;
       document.getElementById('dl-buy').textContent = urlBuy;
       const ob = document.getElementById('open-buy');
-      ob.href = deepBuy; ob.style.display = 'inline-flex';
+      ob.href = urlBuy; ob.style.display = 'inline-flex';
       renderQR('qr-buy', urlBuy);
+      buyParamsText = `${ticker} — Kauf (STP LMT)\nStück: ${shares}\nTrigger: ${auxP}\nLimit: ${lmtP}\n${exch} · ${cur} · ${tifBuy}`;
+      document.getElementById('btn-params-buy').style.display = 'inline-flex';
     }
     if (trigger || stopp) {
       const auxP   = trigger || stopp;
@@ -1706,21 +1712,28 @@ function initIBKR() {
         `currency=${cur}`, `exchange=${exch}`, `tif=${tifStp}`
       ]);
       const urlStp = `${base}?${query}`;
-      const deepStp = `ibkr://trade?${query}`;
       document.getElementById('dl-stopp').textContent = urlStp;
       const os = document.getElementById('open-stopp');
-      os.href = deepStp; os.style.display = 'inline-flex';
+      os.href = urlStp; os.style.display = 'inline-flex';
       renderQR('qr-stopp', urlStp);
+      stpParamsText = `${ticker} — Stopp (STP LMT)\nStück: ${shares}\nTrigger: ${auxP}\nLimit: ${lmtP}\n${exch} · ${cur} · ${tifStp}`;
+      document.getElementById('btn-params-stopp').style.display = 'inline-flex';
     }
   });
 
   document.getElementById('btn-copy-buy').addEventListener('click', () => {
     const url = document.getElementById('dl-buy').textContent;
-    if (url !== '—') navigator.clipboard.writeText(url).then(() => showToast('Kopiert', 'success'));
+    if (url !== '—') navigator.clipboard.writeText(url).then(() => showToast('Link kopiert', 'success'));
   });
   document.getElementById('btn-copy-stopp').addEventListener('click', () => {
     const url = document.getElementById('dl-stopp').textContent;
-    if (url !== '—') navigator.clipboard.writeText(url).then(() => showToast('Kopiert', 'success'));
+    if (url !== '—') navigator.clipboard.writeText(url).then(() => showToast('Link kopiert', 'success'));
+  });
+  document.getElementById('btn-params-buy').addEventListener('click', () => {
+    if (buyParamsText) navigator.clipboard.writeText(buyParamsText).then(() => showToast('Felder kopiert', 'success'));
+  });
+  document.getElementById('btn-params-stopp').addEventListener('click', () => {
+    if (stpParamsText) navigator.clipboard.writeText(stpParamsText).then(() => showToast('Felder kopiert', 'success'));
   });
 }
 </script>
