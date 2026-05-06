@@ -907,8 +907,9 @@ function renderKandidaten() {
           <th>Ticker</th>
           <th>Datum</th>
           <th>Setup</th>
-          <th>Kauf Trigger / Limit</th>
-          <th>Stopp Trigger / Limit</th>
+          <th>Kauf Trigger</th>
+          <th>Limit</th>
+          <th>Hard Stopp</th>
           <th>Aktien</th>
           <th>Pos. Größe</th>
           <th>Risk € / Trade%</th>
@@ -937,14 +938,9 @@ function renderKandidaten() {
               <td><strong class="text-mono">${k.ticker}</strong>${k.fomo ? ' <span class="badge badge-amber" style="font-size:9px">FOMO</span>' : ''}</td>
               <td>${fmtDate(k.datum)}</td>
               <td>${k.setup_grad ? `<span class="badge badge-blue">${k.setup_grad}</span>` : '—'}</td>
-              <td class="mono" style="line-height:1.6">
-                ${k.entry_trigger ? `<span style="color:var(--text-muted);font-size:10px">T </span>${fmt(k.entry_trigger)} €<br>` : ''}
-                <span style="color:var(--text-muted);font-size:10px">L </span>${fmt(k.entry)} €
-              </td>
-              <td class="mono" style="line-height:1.6;color:var(--red)">
-                ${k.lod ? `<span style="color:var(--text-muted);font-size:10px">T </span><span style="color:var(--red)">${fmt(k.lod)} €</span><br>` : ''}
-                <span style="color:var(--text-muted);font-size:10px">L </span>${fmt(k.stopp_hard)} €
-              </td>
+              <td class="mono">${k.entry_trigger ? fmt(k.entry_trigger) + ' €' : '—'}</td>
+              <td class="mono">${fmt(k.entry)} €</td>
+              <td class="mono" style="color:var(--red)">${fmt(k.stopp_hard)} €</td>
               <td class="mono">${k.aktien || '—'}</td>
               <td class="mono">${k.pos_groesse ? fmt(k.pos_groesse)+' €' : '—'}</td>
               <td class="mono" style="color:var(--amber)">${fmt(k.risk_eur)} € <span style="color:var(--text-muted);font-size:11px">(${k.risk_share_pct ? fmt(k.risk_share_pct,2)+'%' : '—'})</span></td>
