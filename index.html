@@ -277,8 +277,9 @@
       <div class="field"><label>Ticker</label><input type="text" id="ek-ticker" style="text-transform:uppercase"></div>
       <div class="field"><label>Stückzahl</label><input type="number" id="ek-aktien"></div>
     </div>
-    <div class="grid-2 mb-12">
-      <div class="field"><label>Entry / Limit (€)</label><input type="number" id="ek-entry" step="0.01"></div>
+    <div class="grid-3 mb-12">
+      <div class="field"><label>Kauf Trigger (€)</label><input type="number" id="ek-trigger" step="0.01" placeholder="z.B. 100.00"></div>
+      <div class="field"><label>Limit (€)</label><input type="number" id="ek-entry" step="0.01" placeholder="z.B. 100.25"></div>
       <div class="field"><label>Hard Stopp (€)</label><input type="number" id="ek-stopp" step="0.01"></div>
     </div>
     <div class="grid-2 mb-12">
@@ -1050,20 +1051,22 @@ function renderKandidaten() {
     btn.addEventListener('click', () => {
       const k = LS.get(KEY_KANDIDATEN).find(x => x.id === btn.dataset.id);
       if (!k) return;
-      document.getElementById('ek-ticker').value = k.ticker || '';
-      document.getElementById('ek-aktien').value = k.aktien || '';
-      document.getElementById('ek-entry').value  = k.entry  || '';
-      document.getElementById('ek-stopp').value  = k.stopp_hard || '';
+      document.getElementById('ek-ticker').value  = k.ticker        || '';
+      document.getElementById('ek-aktien').value  = k.aktien        || '';
+      document.getElementById('ek-trigger').value = k.entry_trigger || k.entry || '';
+      document.getElementById('ek-entry').value   = k.entry         || '';
+      document.getElementById('ek-stopp').value   = k.stopp_hard    || '';
       document.getElementById('ek-atr').value    = k.atr_pct || '';
       document.getElementById('ek-theme').value  = k.theme || '';
       openModal('modal-edit-kandidat');
 
       document.getElementById('btn-ek-save').onclick = () => {
-        const entry  = parseFloat(document.getElementById('ek-entry').value);
-        const stopp  = parseFloat(document.getElementById('ek-stopp').value);
-        const aktien = parseInt(document.getElementById('ek-aktien').value);
-        const atr    = parseFloat(document.getElementById('ek-atr').value) || 0;
-        if (!entry || !stopp || !aktien) return showToast('Entry, Stopp und Stückzahl erforderlich', 'error');
+        const trigger = parseFloat(document.getElementById('ek-trigger').value);
+        const entry   = parseFloat(document.getElementById('ek-entry').value);
+        const stopp   = parseFloat(document.getElementById('ek-stopp').value);
+        const aktien  = parseInt(document.getElementById('ek-aktien').value);
+        const atr     = parseFloat(document.getElementById('ek-atr').value) || 0;
+        if (!entry || !stopp || !aktien) return showToast('Limit, Stopp und Stückzahl erforderlich', 'error');
         const riskPerShare = entry - stopp;
         const riskPct      = riskPerShare / entry * 100;
         const riskAtr      = atr > 0 ? atr / riskPct : 0;
@@ -1073,6 +1076,7 @@ function renderKandidaten() {
         all[idx] = { ...all[idx],
           ticker:         document.getElementById('ek-ticker').value.toUpperCase() || all[idx].ticker,
           aktien,
+          entry_trigger:  trigger || all[idx].entry_trigger,
           entry,
           stopp_hard:     stopp,
           oneR:           +riskPerShare.toFixed(4),
