@@ -841,11 +841,13 @@ function saveKandidat() {
   if (!(stopp > 0)) return showToast('Stopp fehlt', 'error');
 
   const k = {
-    id:         genId(),
+    id:           genId(),
     ticker,
-    datum:      new Date().toISOString(),
-    entry:      +limit.toFixed(4),
-    stopp_hard: +stopp.toFixed(4),
+    datum:        new Date().toISOString(),
+    entry_trigger:+calcState.entry.toFixed(4),
+    entry:        +limit.toFixed(4),
+    lod:          +calcState.lod.toFixed(4),
+    stopp_hard:   +stopp.toFixed(4),
     aktien:     shares,
     pos_groesse:+(shares * limit).toFixed(2),
     risk_eur:   +riskEur.toFixed(2),
@@ -905,8 +907,8 @@ function renderKandidaten() {
           <th>Ticker</th>
           <th>Datum</th>
           <th>Setup</th>
-          <th>Entry</th>
-          <th>Hard Stopp</th>
+          <th>Kauf Trigger / Limit</th>
+          <th>Stopp Trigger / Limit</th>
           <th>Aktien</th>
           <th>Pos. Größe</th>
           <th>Risk € / Trade%</th>
@@ -935,8 +937,14 @@ function renderKandidaten() {
               <td><strong class="text-mono">${k.ticker}</strong>${k.fomo ? ' <span class="badge badge-amber" style="font-size:9px">FOMO</span>' : ''}</td>
               <td>${fmtDate(k.datum)}</td>
               <td>${k.setup_grad ? `<span class="badge badge-blue">${k.setup_grad}</span>` : '—'}</td>
-              <td class="mono">${fmt(k.entry)} €</td>
-              <td class="mono" style="color:var(--red)">${fmt(k.stopp_hard)} €</td>
+              <td class="mono" style="line-height:1.6">
+                ${k.entry_trigger ? `<span style="color:var(--text-muted);font-size:10px">T </span>${fmt(k.entry_trigger)} €<br>` : ''}
+                <span style="color:var(--text-muted);font-size:10px">L </span>${fmt(k.entry)} €
+              </td>
+              <td class="mono" style="line-height:1.6;color:var(--red)">
+                ${k.lod ? `<span style="color:var(--text-muted);font-size:10px">T </span><span style="color:var(--red)">${fmt(k.lod)} €</span><br>` : ''}
+                <span style="color:var(--text-muted);font-size:10px">L </span>${fmt(k.stopp_hard)} €
+              </td>
               <td class="mono">${k.aktien || '—'}</td>
               <td class="mono">${k.pos_groesse ? fmt(k.pos_groesse)+' €' : '—'}</td>
               <td class="mono" style="color:var(--amber)">${fmt(k.risk_eur)} € <span style="color:var(--text-muted);font-size:11px">(${k.risk_share_pct ? fmt(k.risk_share_pct,2)+'%' : '—'})</span></td>
@@ -1014,7 +1022,9 @@ function renderKandidaten() {
       const k = LS.get(KEY_KANDIDATEN).find(x => x.id === btn.dataset.id);
       if (!k) return;
       // Werte in calcState laden
-      Object.assign(calcState, { ticker: k.ticker, shares: k.aktien, limit: k.entry, stopp: k.stopp_hard });
+      Object.assign(calcState, { ticker: k.ticker, shares: k.aktien,
+        entry: k.entry_trigger || k.entry, limit: k.entry,
+        lod: k.lod || k.stopp_hard, stopp: k.stopp_hard });
       // IBKR-Tab neu initialisieren damit Auto-Fill greift (auch wenn Tab schon offen war)
       initialized['ibkr'] = false;
       document.querySelector('[data-tab="ibkr"]').click();
@@ -1627,16 +1637,16 @@ function initIBKR() {
   document.getElementById('ib-ticker').addEventListener('input', e => e.target.value = e.target.value.toUpperCase());
 
   function fillIBKRFields() {
-    const { ticker, shares, limit, stopp } = calcState;
+    const { ticker, shares, entry, limit, lod, stopp } = calcState;
     if (!ticker && !shares) return false;
     if (ticker) document.getElementById('ib-ticker').value = ticker;
     if (shares) document.getElementById('ib-shares').value = shares;
     if (limit) {
-      document.getElementById('ib-entry-trigger').value = limit.toFixed(2);
+      document.getElementById('ib-entry-trigger').value = (entry || limit).toFixed(2);
       document.getElementById('ib-limit').value         = limit.toFixed(2);
     }
     if (stopp) {
-      document.getElementById('ib-trigger').value = stopp.toFixed(2);
+      document.getElementById('ib-trigger').value = (lod || stopp).toFixed(2);
       document.getElementById('ib-stopp').value   = stopp.toFixed(2);
     }
     return true;
