@@ -203,6 +203,20 @@
     .tab-nav::-webkit-scrollbar { display: none; }
     .kandidaten-table-wrap { overflow-x: auto; }
     .motto-mobile { display: none; }
+    /* Kurs-Live-Anzeige */
+    .kurs-section { display:flex;align-items:center;gap:16px;padding:10px 0 2px;border-top:1px solid var(--border);margin-top:10px;flex-wrap:wrap; }
+    .kurs-pnl { display:flex;gap:20px;flex-wrap:wrap;align-items:flex-start; }
+    .kurs-pnl-item { display:flex;flex-direction:column;gap:2px; }
+    .kurs-pnl-lbl { font-size:10px;color:var(--text-muted);text-transform:uppercase;letter-spacing:.5px; }
+    .kurs-pnl-val { font-family:'DM Mono',monospace;font-size:13px;font-weight:500; }
+    /* Progress Bar */
+    .pos-bar-outer { position:relative;height:6px;background:var(--border);border-radius:3px;margin:22px 6px 30px; }
+    .pos-bar-fill { position:absolute;left:0;top:0;height:100%;border-radius:3px;transition:width .15s,background .15s; }
+    .pos-bar-marker { position:absolute;top:50%;transform:translate(-50%,-50%);display:flex;flex-direction:column;align-items:center; }
+    .pos-bar-marker-tick { width:1.5px;height:12px;border-radius:1px; }
+    .pos-bar-marker-lbl { font-size:9px;color:var(--text-muted);white-space:nowrap;text-align:center;margin-top:5px;font-family:'DM Mono',monospace;line-height:1.3; }
+    .pos-bar-cursor { position:absolute;top:50%;transform:translate(-50%,-50%);width:11px;height:11px;border-radius:50%;border:2px solid var(--bg);z-index:3;transition:left .15s; }
+    .pos-bar-cursor-lbl { position:absolute;top:-19px;left:50%;transform:translateX(-50%);font-size:10px;font-family:'DM Mono',monospace;white-space:nowrap;font-weight:600; }
     @media (max-width: 600px) {
       .motto-mobile { display: block; text-align: center; font-size: 11px; color: var(--text-muted); font-style: italic; padding: 6px 12px; background: var(--card); border-bottom: 1px solid var(--border); }
     }
@@ -1168,6 +1182,30 @@ function renderPositions() {
         </div>
         <div class="trailing-result" id="trailing-${p.id}"></div>
 
+        <div class="kurs-section">
+          <div class="field" style="min-width:155px;max-width:175px">
+            <label>Aktueller Kurs (€)</label>
+            <input type="number" class="kurs-aktuell" data-id="${p.id}" step="0.01" placeholder="${fmt(p.entry)}">
+          </div>
+          <div class="kurs-pnl" id="kurs-pnl-${p.id}" style="display:none">
+            <div class="kurs-pnl-item">
+              <span class="kurs-pnl-lbl">Unreal. P&amp;L</span>
+              <span class="kurs-pnl-val" id="kpnl-abs-${p.id}">—</span>
+            </div>
+            <div class="kurs-pnl-item">
+              <span class="kurs-pnl-lbl">P&amp;L (R)</span>
+              <span class="kurs-pnl-val" id="kpnl-r-${p.id}">—</span>
+            </div>
+            <div class="kurs-pnl-item">
+              <span class="kurs-pnl-lbl">Abstand Stopp</span>
+              <span class="kurs-pnl-val" id="kpnl-dist-${p.id}">—</span>
+            </div>
+          </div>
+        </div>
+        <div id="pos-bar-wrap-${p.id}" style="display:none">
+          <div class="pos-bar-outer" id="pos-bar-inner-${p.id}"></div>
+        </div>
+
         <div class="position-actions">
           <button class="btn btn-ghost btn-sm btn-tv" data-id="${p.id}">Teilverkauf</button>
           <button class="btn btn-danger btn-sm btn-close" data-id="${p.id}">Schließen</button>
@@ -1292,6 +1330,76 @@ function renderPositions() {
       renderPositions();
     });
   });
+
+  // Aktueller Kurs — Live P&L + Fortschrittsbalken
+  document.querySelectorAll('.kurs-aktuell').forEach(input => {
+    input.addEventListener('input', () => {
+      const id = input.dataset.id;
+      const kurs = parseFloat(input.value);
+      const pos = LS.get(KEY_POS).find(p => p.id === id);
+      if (!pos || !kurs) {
+        document.getElementById(`kurs-pnl-${id}`).style.display = 'none';
+        document.getElementById(`pos-bar-wrap-${id}`).style.display = 'none';
+        return;
+      }
+      updateKursDisplay(pos, kurs);
+    });
+  });
+}
+
+function updateKursDisplay(pos, kurs) {
+  const rps = (pos.entry || 0) - (pos.stopp_hard || 0);
+  const aktien = pos.aktien || 0;
+  const pnlAbs = (kurs - pos.entry) * aktien;
+  const pnlR = rps > 0 ? (kurs - pos.entry) / rps : 0;
+  const stoppDist = kurs - (pos.stopp_hard || 0);
+  const stoppDistPct = pos.stopp_hard > 0 ? (kurs - pos.stopp_hard) / kurs * 100 : 0;
+
+  document.getElementById(`kurs-pnl-${pos.id}`).style.display = 'flex';
+
+  const absEl = document.getElementById(`kpnl-abs-${pos.id}`);
+  absEl.textContent = `${pnlAbs >= 0 ? '+' : ''}${fmt(pnlAbs)} €`;
+  absEl.style.color = pnlAbs >= 0 ? 'var(--green)' : 'var(--red)';
+
+  const rEl = document.getElementById(`kpnl-r-${pos.id}`);
+  rEl.textContent = `${pnlR >= 0 ? '+' : ''}${fmt(pnlR, 2)}R`;
+  rEl.style.color = pnlR >= 0 ? 'var(--green)' : 'var(--red)';
+
+  const distEl = document.getElementById(`kpnl-dist-${pos.id}`);
+  distEl.textContent = `${fmt(stoppDist)} € (${fmt(Math.abs(stoppDistPct), 1)}%)`;
+  distEl.style.color = stoppDist > 0 ? 'var(--text)' : 'var(--red)';
+
+  const barWrap = document.getElementById(`pos-bar-wrap-${pos.id}`);
+  if (rps <= 0) { barWrap.style.display = 'none'; return; }
+  barWrap.style.display = 'block';
+
+  // Balken: stopp_hard (0%) → entry (25%) → 1R (50%) → 2R (75%) → 3R (100%)
+  const barMin = pos.stopp_hard;
+  const barMax = pos.entry + 3 * rps;
+  const totalRange = barMax - barMin;
+  const pct = v => Math.min(100, Math.max(0, (v - barMin) / totalRange * 100));
+  const kursPct = (kurs - barMin) / totalRange * 100;
+
+  const fillColor = kurs > pos.entry ? 'var(--green)' : kurs > pos.stopp_hard ? 'var(--amber)' : 'var(--red)';
+  const markers = [
+    { val: pos.stopp_hard,        label: `Stopp`,  sub: fmt(pos.stopp_hard) + ' €',        color: 'var(--red)' },
+    { val: pos.entry,             label: `Entry`,  sub: fmt(pos.entry) + ' €',             color: 'var(--text-muted)' },
+    { val: pos.entry + rps,       label: `1R`,     sub: fmt(pos.entry + rps) + ' €',       color: 'var(--green)' },
+    { val: pos.entry + 2 * rps,   label: `2R`,     sub: fmt(pos.entry + 2 * rps) + ' €',   color: 'var(--green)' },
+    { val: pos.entry + 3 * rps,   label: `3R`,     sub: fmt(pos.entry + 3 * rps) + ' €',   color: 'var(--green)' },
+  ];
+
+  document.getElementById(`pos-bar-inner-${pos.id}`).innerHTML = `
+    <div class="pos-bar-fill" style="width:${Math.min(100, Math.max(0, kursPct))}%;background:${fillColor}"></div>
+    ${markers.map(m => `
+      <div class="pos-bar-marker" style="left:${pct(m.val)}%">
+        <div class="pos-bar-marker-tick" style="background:${m.color}"></div>
+        <div class="pos-bar-marker-lbl">${m.label}<br>${m.sub}</div>
+      </div>`).join('')}
+    <div class="pos-bar-cursor" style="left:${Math.min(100, Math.max(0, kursPct))}%;background:${fillColor}">
+      <div class="pos-bar-cursor-lbl" style="color:${fillColor}">${fmt(kurs)} €</div>
+    </div>
+  `;
 }
 
 // ═══════════════════════════════════════════════════════════════════════════════
