@@ -1039,7 +1039,7 @@ function renderKandidaten() {
       const passes = LS.get(KEY_PASSES); passes.push(p); LS.set(KEY_PASSES, passes);
       const all = LS.get(KEY_KANDIDATEN);
       const idx = all.findIndex(x => x.id === btn.dataset.id);
-      if (idx >= 0) { all[idx].status = 'passed'; LS.set(KEY_KANDIDATEN, all); }
+      if (idx >= 0) { all[idx].status = 'passed'; LS.set(KEY_KANDIDATEN, all); saveToFirestore('kandidaten', all[idx]); }
       showToast(`${k.ticker} als Pass gespeichert`, 'success');
       saveToFirestore('passes', p);
       renderKandidaten();
