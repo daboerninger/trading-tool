@@ -348,6 +348,24 @@
   </div>
 </div>
 
+<div class="modal-overlay" id="modal-pass-grund">
+  <div class="modal">
+    <div class="modal-title">Passed: <span id="pg-ticker" style="color:var(--accent)"></span></div>
+    <div class="field mb-12">
+      <label>Warum gepasst?</label>
+      <textarea id="pg-grund" rows="3" placeholder="z.B. Setup nicht sauber, Markt schwach, zu spät, kein klarer Trigger..."></textarea>
+    </div>
+    <div style="display:flex;align-items:center;gap:10px;margin-bottom:16px">
+      <input type="checkbox" id="pg-fomo" style="width:auto;margin:0">
+      <label for="pg-fomo" style="text-transform:none;font-size:13px;cursor:pointer;color:var(--text-dim)">FOMO-Setup (hätte ich besser ignoriert)</label>
+    </div>
+    <div class="modal-actions">
+      <button class="btn btn-ghost" id="btn-pass-cancel">Abbrechen</button>
+      <button class="btn btn-ghost" id="btn-pass-save" style="color:var(--text);border-color:var(--text-muted)">Pass speichern</button>
+    </div>
+  </div>
+</div>
+
 <div id="toast-container"></div>
 
 <script type="module">
@@ -500,10 +518,28 @@ function closeModal(id) { document.getElementById(id).classList.remove('open'); 
 document.querySelectorAll('.modal-overlay').forEach(o =>
   o.addEventListener('click', e => { if (e.target === o) closeModal(o.id); })
 );
-document.getElementById('btn-tv-cancel').onclick = () => closeModal('modal-teilverkauf');
-document.getElementById('btn-cp-cancel').onclick = () => closeModal('modal-close-pos');
-document.getElementById('btn-ef-cancel').onclick = () => closeModal('modal-erfassen');
-document.getElementById('btn-ek-cancel').onclick = () => closeModal('modal-edit-kandidat');
+document.getElementById('btn-tv-cancel').onclick  = () => closeModal('modal-teilverkauf');
+document.getElementById('btn-cp-cancel').onclick  = () => closeModal('modal-close-pos');
+document.getElementById('btn-ef-cancel').onclick  = () => closeModal('modal-erfassen');
+document.getElementById('btn-ek-cancel').onclick  = () => closeModal('modal-edit-kandidat');
+document.getElementById('btn-pass-cancel').onclick = () => closeModal('modal-pass-grund');
+document.getElementById('btn-pass-save').onclick   = () => {
+  const grund = document.getElementById('pg-grund').value.trim();
+  const fomo  = document.getElementById('pg-fomo').checked;
+  closeModal('modal-pass-grund');
+  if (_passConfirm) { _passConfirm(grund, fomo); _passConfirm = null; }
+};
+
+let _passConfirm = null;
+
+function openPassModal(ticker, fomoDefault, onConfirm) {
+  document.getElementById('pg-ticker').textContent = ticker;
+  document.getElementById('pg-grund').value = '';
+  document.getElementById('pg-fomo').checked = !!fomoDefault;
+  _passConfirm = onConfirm;
+  openModal('modal-pass-grund');
+  setTimeout(() => document.getElementById('pg-grund').focus(), 60);
+}
 
 // ═══════════════════════════════════════════════════════════════════════════════
 // TAB ROUTING
@@ -829,27 +865,25 @@ function savePass() {
   const ticker = document.getElementById('c-ticker').value.toUpperCase();
   if (!ticker) return showToast('Ticker fehlt', 'error');
 
-  const p = {
-    id:              genId(),
-    ticker,
-    datum:           new Date().toISOString(),
-    geplanter_entry: calcState.limit || null,
-    grund:           '',
-    fomo:            calcState.fomo,
-    notiz:           '',
-    followup_5t:     '',
-    followup_10t:    '',
-    entscheidung_richtig: '',
-  };
-
-  // LocalStorage (primär)
-  const passes = LS.get(KEY_PASSES);
-  passes.push(p);
-  LS.set(KEY_PASSES, passes);
-  showToast(`${ticker} als Passed Trade gespeichert`, 'success');
-
-  // Firebase (still im Hintergrund)
-  saveToFirestore('passes', p);
+  openPassModal(ticker, calcState.fomo, (grund, fomo) => {
+    const p = {
+      id:              genId(),
+      ticker,
+      datum:           new Date().toISOString(),
+      geplanter_entry: calcState.limit || null,
+      grund,
+      fomo,
+      notiz:           '',
+      followup_5t:     '',
+      followup_10t:    '',
+      entscheidung_richtig: '',
+    };
+    const passes = LS.get(KEY_PASSES);
+    passes.push(p);
+    LS.set(KEY_PASSES, passes);
+    showToast(`${ticker} als Passed Trade gespeichert`, 'success');
+    saveToFirestore('passes', p);
+  });
 }
 
 function saveKandidat() {
@@ -1050,16 +1084,18 @@ function renderKandidaten() {
     btn.addEventListener('click', () => {
       const k = LS.get(KEY_KANDIDATEN).find(x => x.id === btn.dataset.id);
       if (!k) return;
-      const p = { id: genId(), ticker: k.ticker, datum: new Date().toISOString(),
-        geplanter_entry: k.entry, grund: '', fomo: k.fomo,
-        notiz: '', followup_5t: '', followup_10t: '', entscheidung_richtig: '' };
-      const passes = LS.get(KEY_PASSES); passes.push(p); LS.set(KEY_PASSES, passes);
-      const all = LS.get(KEY_KANDIDATEN);
-      const idx = all.findIndex(x => x.id === btn.dataset.id);
-      if (idx >= 0) { all[idx].status = 'passed'; LS.set(KEY_KANDIDATEN, all); saveToFirestore('kandidaten', all[idx]); }
-      showToast(`${k.ticker} als Pass gespeichert`, 'success');
-      saveToFirestore('passes', p);
-      renderKandidaten();
+      openPassModal(k.ticker, k.fomo, (grund, fomo) => {
+        const p = { id: genId(), ticker: k.ticker, datum: new Date().toISOString(),
+          geplanter_entry: k.entry, grund, fomo,
+          notiz: '', followup_5t: '', followup_10t: '', entscheidung_richtig: '' };
+        const passes = LS.get(KEY_PASSES); passes.push(p); LS.set(KEY_PASSES, passes);
+        const all = LS.get(KEY_KANDIDATEN);
+        const idx = all.findIndex(x => x.id === btn.dataset.id);
+        if (idx >= 0) { all[idx].status = 'passed'; LS.set(KEY_KANDIDATEN, all); saveToFirestore('kandidaten', all[idx]); }
+        showToast(`${k.ticker} als Pass gespeichert`, 'success');
+        saveToFirestore('passes', p);
+        renderKandidaten();
+      });
     });
   });
 
@@ -1188,7 +1224,7 @@ function renderPositions() {
         <div class="kurs-section">
           <div class="field" style="min-width:155px;max-width:175px">
             <label>Aktueller Kurs (€)</label>
-            <input type="number" class="kurs-aktuell" data-id="${p.id}" step="0.01" placeholder="${fmt(p.entry)}">
+            <input type="number" class="kurs-aktuell" data-id="${p.id}" step="0.01" placeholder="${fmt(p.entry)}" value="${p.kurs_aktuell || ''}">
           </div>
           <div class="kurs-pnl" id="kurs-pnl-${p.id}" style="display:none">
             <div class="kurs-pnl-item">
@@ -1336,8 +1372,10 @@ function renderPositions() {
 
   // Aktueller Kurs — Live P&L + Fortschrittsbalken
   document.querySelectorAll('.kurs-aktuell').forEach(input => {
+    const id = input.dataset.id;
+
+    // Live-Anzeige bei Eingabe
     input.addEventListener('input', () => {
-      const id = input.dataset.id;
       const kurs = parseFloat(input.value);
       const pos = LS.get(KEY_POS).find(p => p.id === id);
       if (!pos || !kurs) {
@@ -1347,6 +1385,26 @@ function renderPositions() {
       }
       updateKursDisplay(pos, kurs);
     });
+
+    // Kurs bei Fokusverlust speichern
+    input.addEventListener('blur', () => {
+      const kurs = parseFloat(input.value);
+      if (!kurs) return;
+      const all = LS.get(KEY_POS);
+      const idx = all.findIndex(p => p.id === id);
+      if (idx >= 0) {
+        all[idx].kurs_aktuell = kurs;
+        LS.set(KEY_POS, all);
+        saveToFirestore('positions', all[idx]);
+      }
+    });
+
+    // Gespeicherten Kurs sofort anzeigen
+    if (input.value) {
+      const kurs = parseFloat(input.value);
+      const pos = LS.get(KEY_POS).find(p => p.id === id);
+      if (pos && kurs) updateKursDisplay(pos, kurs);
+    }
   });
 }
 
