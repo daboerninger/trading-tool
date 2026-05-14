@@ -1592,7 +1592,7 @@ function renderJournalPasses() {
       <table>
         <thead><tr>
           <th>Ticker</th><th>Datum</th><th>Entry geplant</th><th>FOMO</th>
-          <th>+5T Follow-up</th><th>+10T Follow-up</th><th>Richtig?</th>
+          <th>Grund</th><th>+5T Follow-up</th><th>+10T Follow-up</th><th>Richtig?</th>
         </tr></thead>
         <tbody>${passes.map(p => `
           <tr>
@@ -1600,6 +1600,9 @@ function renderJournalPasses() {
             <td>${fmtDate(p.datum)}</td>
             <td class="mono">${p.geplanter_entry ? fmt(p.geplanter_entry)+' €' : '—'}</td>
             <td>${p.fomo ? '<span class="badge badge-amber">FOMO</span>' : '<span class="badge badge-gray">Nein</span>'}</td>
+            <td><input type="text" class="pass-field" data-id="${p.id}" data-field="grund"
+              value="${(p.grund||'').replace(/"/g,'&quot;')}" placeholder="Warum gepasst?"
+              style="font-size:11px;padding:4px 7px;min-width:160px"></td>
             <td><input type="text" class="pass-field" data-id="${p.id}" data-field="followup_5t"
               value="${p.followup_5t||''}" placeholder="Was passierte..." style="font-size:11px;padding:4px 7px;min-width:120px"></td>
             <td><input type="text" class="pass-field" data-id="${p.id}" data-field="followup_10t"
@@ -1641,9 +1644,9 @@ function exportCSV(data, type) {
       (t.entry||0).toFixed(2), (t.exit_kurs||0).toFixed(2), t.aktien||'',
       (t.pnl_abs||0).toFixed(2), (t.pnl_r||0).toFixed(3), t.exit_grund||'', t.setup_grad||'', (t.lernpunkt||'').replace(/"/g,'""')]);
   } else {
-    headers = ['Ticker','Datum','Entry geplant','FOMO','+5T','+10T','Richtig'];
+    headers = ['Ticker','Datum','Entry geplant','FOMO','Grund','+5T','+10T','Richtig'];
     rows = data.map(p => [p.ticker, fmtDate(p.datum), p.geplanter_entry ? (p.geplanter_entry).toFixed(2) : '',
-      p.fomo?'Ja':'Nein', (p.followup_5t||'').replace(/"/g,'""'),
+      p.fomo?'Ja':'Nein', (p.grund||'').replace(/"/g,'""'), (p.followup_5t||'').replace(/"/g,'""'),
       (p.followup_10t||'').replace(/"/g,'""'), p.entscheidung_richtig||'']);
   }
   const csv = [headers,...rows].map(r=>r.map(v=>`"${v}"`).join(';')).join('\n');
