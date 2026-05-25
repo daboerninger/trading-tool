@@ -2,5 +2,7 @@
 *.csv
 *.png
 trading_tool_v1.html
-js/
-css/
+trading-tool-181ce-firebase-adminsdk-fbsvc-e37af9bb04.json
+firebase.json
+.firebaserc
+.firebaseignore
