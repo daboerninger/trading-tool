@@ -112,7 +112,10 @@
     .stopp-pill.current { background: var(--accent-dim); border-color: var(--accent); color: var(--accent); font-weight: 500; }
     .stopp-pill.breakeven { background: var(--green-dim); border-color: var(--green); color: var(--green); }
     .stopp-pill.hard { background: var(--red-dim); border-color: var(--red); color: var(--red); }
-    .trailing-section { display: flex; align-items: center; gap: 8px; margin-top: 10px; flex-wrap: wrap; }
+    .stopp-aktuell-row { display:flex; align-items:center; gap:8px; margin-top:10px; font-size:12px; }
+    .stopp-aktuell-label { color: var(--text-muted); }
+    .stopp-aktuell-val { font-family:'DM Mono',monospace; color:var(--accent); font-weight:600; }
+    .trailing-section { display: flex; align-items: center; gap: 8px; margin-top: 8px; flex-wrap: wrap; }
     .trailing-result { display: flex; gap: 6px; flex-wrap: wrap; margin-top: 8px; }
     .trailing-opt { padding: 4px 10px; border-radius: 20px; font-family: 'DM Mono', monospace; font-size: 11px; background: var(--bg); border: 1px solid var(--border); color: var(--text-dim); cursor: pointer; transition: border-color .15s; }
     .trailing-opt:hover { border-color: var(--accent); background: var(--accent-dim); color: var(--accent); }
@@ -1215,9 +1218,14 @@ function renderPositions() {
 
         ${tv.length ? `<div class="text-muted mt-8">Teilverkäufe: ${tv.map(t=>`${t.shares}×${fmt(t.kurs)}€`).join(', ')}</div>` : ''}
 
+        <div class="stopp-aktuell-row">
+          <span class="stopp-aktuell-label">Aktueller Stopp:</span>
+          <span class="stopp-aktuell-val">${fmt(p.stopp_aktuell || p.stopp_hard)} €</span>
+        </div>
+
         <div class="trailing-section">
-          <input type="number" class="trailing-input" placeholder="Kurs für Trailing..." step="0.01" style="width:180px" data-id="${p.id}">
-          <button class="btn btn-ghost btn-sm btn-calc-trailing" data-id="${p.id}">Berechnen</button>
+          <input type="number" class="trailing-input" placeholder="Aktueller Kurs..." step="0.01" style="width:180px" data-id="${p.id}">
+          <button class="btn btn-ghost btn-sm btn-calc-trailing" data-id="${p.id}">Nachziehen</button>
         </div>
         <div class="trailing-result" id="trailing-${p.id}"></div>
 
@@ -1261,16 +1269,10 @@ function renderPositions() {
       if (!kurs) return showToast('Kurs eingeben', 'error');
       const pos = LS.get(KEY_POS).find(p => p.id === id);
       const rps = (pos?.entry || 0) - (pos?.stopp_hard || 0);
-      const opts = [
-        { label: 'Trailing (−0.25%)', val: kurs * 0.9975 },
-        { label: '−0.33R', val: (pos?.stopp_hard||0) + rps * 0.67 },
-        { label: '−0.66R', val: (pos?.stopp_hard||0) + rps * 0.34 },
-        { label: 'BE +0.25R', val: pos?.stopp_breakeven || 0 },
-      ];
+      const newStopp = parseFloat((kurs * 0.9975).toFixed(4));
       const container = document.getElementById(`trailing-${id}`);
-      container.innerHTML = opts.map(o =>
-        `<div class="trailing-opt" data-id="${id}" data-val="${o.val.toFixed(4)}">${o.label}: ${fmt(o.val)} €</div>`
-      ).join('');
+      container.innerHTML =
+        `<div class="trailing-opt" data-id="${id}" data-val="${newStopp}">Neuer Stopp (−0.25%): ${fmt(newStopp)} €</div>`;
       container.querySelectorAll('.trailing-opt').forEach(opt => {
         opt.addEventListener('click', () => {
           const newVal = parseFloat(opt.dataset.val);
