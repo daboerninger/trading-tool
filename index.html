@@ -258,9 +258,9 @@
 
   <div class="motto-mobile">Discipline isn't a talent. It's a daily decision.</div>
   <nav class="tab-nav">
+    <button class="tab-btn active" data-tab="positions">Positionen</button>
     <button class="tab-btn" data-tab="calc">Rechner</button>
     <button class="tab-btn" data-tab="kandidaten">Kandidaten</button>
-    <button class="tab-btn active" data-tab="positions">Positionen</button>
     <button class="tab-btn" data-tab="journal">Journal</button>
     <button class="tab-btn" data-tab="stats">Stats</button>
     <button class="tab-btn" data-tab="ibkr">IBKR</button>
@@ -591,7 +591,7 @@ let calcState = { edgeCount: 0, ticker: '', limit: 0, stopp: 0, shares: 0, riskE
 
 async function bootstrap() {
   await loadFromFirestore();
-  activateTab('calc');
+  activateTab('positions');
 }
 
 function initCalc() {
