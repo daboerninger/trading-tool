@@ -112,6 +112,8 @@
     .stopp-pill.current { background: var(--accent-dim); border-color: var(--accent); color: var(--accent); font-weight: 500; }
     .stopp-pill.breakeven { background: var(--green-dim); border-color: var(--green); color: var(--green); }
     .stopp-pill.hard { background: var(--red-dim); border-color: var(--red); color: var(--red); }
+    .stopp-pill:not(.current) { cursor: pointer; }
+    .stopp-pill:not(.current):hover { border-color: var(--accent); background: var(--accent-dim); color: var(--accent); }
     .stopp-aktuell-row { display:flex; align-items:center; gap:8px; margin-top:10px; font-size:12px; }
     .stopp-aktuell-label { color: var(--text-muted); }
     .stopp-aktuell-val { font-family:'DM Mono',monospace; color:var(--accent); font-weight:600; }
@@ -1189,7 +1191,7 @@ function renderPositions() {
 
   list.innerHTML = positions.map(p => {
     const isCurrent = v => Math.abs(v - p.stopp_aktuell) < 0.0001;
-    const pill = (v, label, cls) => `<div class="stopp-pill ${isCurrent(v) ? 'current' : cls}">${label}: ${fmt(v)} €</div>`;
+    const pill = (v, label, cls) => (v != null && !isNaN(v)) ? `<div class="stopp-pill ${isCurrent(v) ? 'current' : cls}" data-id="${p.id}" data-stopp-val="${v}">${label}: ${fmt(v)} €</div>` : '';
     const tv = (p.teilverkäufe || []);
     return `
       <div class="position-card">
@@ -1283,6 +1285,24 @@ function renderPositions() {
           renderPositions();
         });
       });
+    });
+  });
+
+  // Stopp-Pillen klickbar
+  document.querySelectorAll('.stopp-pill[data-stopp-val]').forEach(pill => {
+    if (pill.classList.contains('current')) return;
+    pill.addEventListener('click', () => {
+      const id     = pill.dataset.id;
+      const newVal = parseFloat(pill.dataset.stoppVal);
+      const all    = LS.get(KEY_POS);
+      const idx    = all.findIndex(p => p.id === id);
+      if (idx >= 0) {
+        all[idx].stopp_aktuell = newVal;
+        LS.set(KEY_POS, all);
+        saveToFirestore('positions', all[idx]);
+      }
+      showToast('Stopp gesetzt: ' + fmt(newVal) + ' €', 'success');
+      renderPositions();
     });
   });
 
