@@ -378,7 +378,8 @@
 // FIREBASE
 // ═══════════════════════════════════════════════════════════════════════════════
 import { initializeApp }  from 'https://www.gstatic.com/firebasejs/10.8.0/firebase-app.js';
-import { getFirestore, collection, doc, setDoc, deleteDoc, getDocs, getDoc, serverTimestamp }
+import { initializeFirestore, persistentLocalCache, persistentMultipleTabManager,
+         collection, doc, setDoc, deleteDoc, getDocs, getDoc, serverTimestamp }
   from 'https://www.gstatic.com/firebasejs/10.8.0/firebase-firestore.js';
 import { getAuth, GoogleAuthProvider, signInWithPopup, signOut, onAuthStateChanged }
   from 'https://www.gstatic.com/firebasejs/10.8.0/firebase-auth.js';
@@ -393,7 +394,11 @@ const firebaseConfig = {
 };
 
 const fbApp = initializeApp(firebaseConfig);
-const db    = getFirestore(fbApp);
+// Firestore-primär: durabler IndexedDB-Cache (multi-tab). Reads sofort aus Cache,
+// Writes werden durable gequeued — überleben Tab-Schließen, Reload und Offline.
+const db    = initializeFirestore(fbApp, {
+  localCache: persistentLocalCache({ tabManager: persistentMultipleTabManager() })
+});
 const auth  = getAuth(fbApp);
 
 // ── Auth Gate ─────────────────────────────────────────────────────────────────
@@ -458,10 +463,13 @@ async function loadFromFirestore() {
     ];
     for (const [col, key] of cols) {
       const snap = await getDocs(collection(db, 'users', uid, col));
-      if (!snap.empty) LS.set(key, snap.docs.map(d => d.data()));
+      // Firestore ist autoritativ — auch leere Collection spiegeln (verhindert Geister-Daten)
+      LS.set(key, snap.docs.map(d => d.data()));
     }
     const depotSnap = await getDoc(doc(db, 'users', uid, 'settings', 'depot'));
     if (depotSnap.exists()) localStorage.setItem('tt_depot', depotSnap.data().value);
+    const notesSnap = await getDoc(doc(db, 'users', uid, 'settings', 'review_notes'));
+    reviewNotes = (notesSnap.exists() && notesSnap.data().windows) ? notesSnap.data().windows : {};
     setBackupStatus('', '');
   } catch (e) {
     console.warn('Firestore load failed:', e.message);
@@ -490,6 +498,9 @@ const KEY_TRADES     = 'tt_trades';
 const KEY_PASSES     = 'tt_passes';
 const KEY_KANDIDATEN = 'tt_kandidaten';
 
+// QQQ-/Markt-Kontext-Notizen pro Hyper-Active-Window (aus Firestore settings/review_notes)
+let reviewNotes = {};
+
 function genId() {
   return Date.now().toString(36) + Math.random().toString(36).slice(2, 7);
 }
@@ -506,6 +517,12 @@ function fmtDate(s) {
   if (!s) return '—';
   const d = new Date(s);
   return d.toLocaleDateString('de-DE', { day: '2-digit', month: '2-digit', year: '2-digit' });
+}
+
+function monthKey(s)   { return s ? s.slice(0, 7) : null; }          // 'YYYY-MM'
+function monthLabel(k) {
+  const [y, m] = k.split('-');
+  return new Date(+y, +m - 1).toLocaleDateString('de-DE', { month: 'short', year: 'numeric' });
 }
 
 function showToast(msg, type = 'info') {
@@ -1193,6 +1210,12 @@ function renderPositions() {
     const isCurrent = v => Math.abs(v - p.stopp_aktuell) < 0.0001;
     const pill = (v, label, cls) => (v != null && !isNaN(v)) ? `<div class="stopp-pill ${isCurrent(v) ? 'current' : cls}" data-id="${p.id}" data-stopp-val="${v}">${label}: ${fmt(v)} €</div>` : '';
     const tv = (p.teilverkäufe || []);
+    const rps = (p.entry || 0) - (p.stopp_hard || 0);
+    const kAkt = p.kurs_aktuell || 0;
+    const pnlAbs = kAkt ? (kAkt - (p.entry || 0)) * (p.aktien || 0) : null;
+    const pnlPct = kAkt && p.entry ? (kAkt - p.entry) / p.entry * 100 : null;
+    const pnlR   = kAkt && rps > 0 ? (kAkt - (p.entry || 0)) / rps : null;
+    const pnlCol = pnlAbs !== null ? (pnlAbs >= 0 ? 'var(--green)' : 'var(--red)') : '';
     return `
       <div class="position-card">
         <div style="display:flex;justify-content:space-between;align-items:flex-start">
@@ -1203,6 +1226,7 @@ function renderPositions() {
               <span>Entry: ${fmt(p.entry)} €</span>
               <span>${p.aktien} Aktien</span>
               <span>Risk: <span style="color:var(--amber)">${fmt(p.risk_eur)} €</span> <span style="color:var(--text-muted)">(${p.entry && p.stopp_hard ? fmt((p.entry-p.stopp_hard)/p.entry*100,2)+'%' : '—'})</span></span>
+              ${pnlAbs !== null ? `<span style="color:${pnlCol};font-weight:600">${pnlAbs>=0?'+':''}${fmt(pnlAbs)} € / ${pnlPct>=0?'+':''}${fmt(pnlPct,2)}% <span style="font-weight:400;font-size:11px">(${pnlR>=0?'+':''}${fmt(pnlR,2)}R)</span></span>` : ''}
               ${p.setup_grad ? `<span class="badge badge-blue">${p.setup_grad}</span>` : ''}
               ${p.theme      ? `<span class="badge badge-gray">${p.theme}</span>`      : ''}
               ${p.fomo       ? `<span class="badge badge-amber">FOMO</span>`           : ''}
@@ -1238,8 +1262,12 @@ function renderPositions() {
           </div>
           <div class="kurs-pnl" id="kurs-pnl-${p.id}" style="display:none">
             <div class="kurs-pnl-item">
-              <span class="kurs-pnl-lbl">Unreal. P&amp;L</span>
+              <span class="kurs-pnl-lbl">Unreal. P&amp;L (abs)</span>
               <span class="kurs-pnl-val" id="kpnl-abs-${p.id}">—</span>
+            </div>
+            <div class="kurs-pnl-item">
+              <span class="kurs-pnl-lbl">Unreal. P&amp;L (%)</span>
+              <span class="kurs-pnl-val" id="kpnl-pct-${p.id}">—</span>
             </div>
             <div class="kurs-pnl-item">
               <span class="kurs-pnl-lbl">P&amp;L (R)</span>
@@ -1440,9 +1468,13 @@ function updateKursDisplay(pos, kurs) {
 
   document.getElementById(`kurs-pnl-${pos.id}`).style.display = 'flex';
 
+  const pnlPct = pos.entry > 0 ? (kurs - pos.entry) / pos.entry * 100 : 0;
   const absEl = document.getElementById(`kpnl-abs-${pos.id}`);
   absEl.textContent = `${pnlAbs >= 0 ? '+' : ''}${fmt(pnlAbs)} €`;
   absEl.style.color = pnlAbs >= 0 ? 'var(--green)' : 'var(--red)';
+  const pctEl = document.getElementById(`kpnl-pct-${pos.id}`);
+  pctEl.textContent = `${pnlPct >= 0 ? '+' : ''}${fmt(pnlPct, 2)}%`;
+  pctEl.style.color = pnlPct >= 0 ? 'var(--green)' : 'var(--red)';
 
   const rEl = document.getElementById(`kpnl-r-${pos.id}`);
   rEl.textContent = `${pnlR >= 0 ? '+' : ''}${fmt(pnlR, 2)}R`;
@@ -1528,8 +1560,25 @@ function initJournal() {
   renderJournalPasses();
 }
 
+let journalSort = { key: 'exit_datum', type: 'date', dir: 'desc' };
+
+function cmpTrades(a, b, key, type, dir) {
+  const mul = dir === 'asc' ? 1 : -1;
+  let av = a[key], bv = b[key];
+  const aEmpty = av == null || av === '';
+  const bEmpty = bv == null || bv === '';
+  if (aEmpty && bEmpty) return 0;
+  if (aEmpty) return 1;   // Leere Felder immer ans Ende
+  if (bEmpty) return -1;
+  if (type === 'date') { av = new Date(av).getTime(); bv = new Date(bv).getTime(); }
+  else if (type === 'num') { av = +av; bv = +bv; }
+  else { av = av.toString().toLowerCase(); bv = bv.toString().toLowerCase(); }
+  return av < bv ? -1 * mul : av > bv ? 1 * mul : 0;
+}
+
 function renderJournalTrades() {
-  const trades = LS.get(KEY_TRADES).sort((a,b) => new Date(b.exit_datum||0) - new Date(a.exit_datum||0));
+  const { key, type, dir } = journalSort;
+  const trades = [...LS.get(KEY_TRADES)].sort((a, b) => cmpTrades(a, b, key, type, dir));
   const container = document.getElementById('journal-sub-trades');
 
   if (!trades.length) { container.innerHTML = `<div class="empty-state"><p>Noch keine abgeschlossenen Trades</p></div>`; return; }
@@ -1544,10 +1593,23 @@ function renderJournalTrades() {
     </div>
     <div class="card journal-table-wrap">
       <table>
-        <thead><tr>
-          <th>Ticker</th><th>Kauf</th><th>Exit</th><th>Tage</th>
-          <th>Entry</th><th>Exit-Kurs</th><th>Aktien</th>
-          <th>Risk</th><th>P&L €</th><th>P&L R</th><th>Grund</th><th>Setup</th><th>Lernpunkt</th>
+        <thead><tr>${[
+          {k:'ticker',t:'str',label:'Ticker'},
+          {k:'kaufdatum',t:'date',label:'Kauf'},
+          {k:'exit_datum',t:'date',label:'Exit'},
+          {k:'haltedauer',t:'num',label:'Tage'},
+          {k:'entry',t:'num',label:'Entry'},
+          {k:'exit_kurs',t:'num',label:'Exit-Kurs'},
+          {k:'aktien',t:'num',label:'Aktien'},
+          {k:'risk_eur',t:'num',label:'Risk'},
+          {k:'pnl_abs',t:'num',label:'P&L €'},
+          {k:'pnl_r',t:'num',label:'P&L R'},
+          {k:'exit_grund',t:'str',label:'Grund'},
+          {k:'setup_grad',t:'str',label:'Setup'},
+          {k:null,label:'Lernpunkt'}
+        ].map(c => c.k
+          ? `<th class="sortable" data-key="${c.k}" data-type="${c.t}" style="cursor:pointer;user-select:none;white-space:nowrap">${c.label}${journalSort.key===c.k ? (journalSort.dir==='asc'?' ▲':' ▼') : '<span style="opacity:.25"> ⇅</span>'}</th>`
+          : `<th>${c.label}</th>`).join('')}
         </tr></thead>
         <tbody>${trades.map(t => `
           <tr>
@@ -1573,6 +1635,20 @@ function renderJournalTrades() {
     </div>`;
 
   document.getElementById('btn-export-trades').addEventListener('click', () => exportCSV(trades, 'trades'));
+
+  container.querySelectorAll('th.sortable').forEach(th => {
+    th.addEventListener('click', () => {
+      const k = th.dataset.key, t = th.dataset.type;
+      if (journalSort.key === k) {
+        journalSort.dir = journalSort.dir === 'asc' ? 'desc' : 'asc';
+      } else {
+        journalSort.key = k;
+        journalSort.type = t;
+        journalSort.dir = t === 'str' ? 'asc' : 'desc';
+      }
+      renderJournalTrades();
+    });
+  });
 
   document.getElementById('btn-recalc-pnl').addEventListener('click', () => {
     const all = LS.get(KEY_TRADES);
@@ -1697,7 +1773,12 @@ function initStats() {
     <div class="grid-2">
       <div class="card"><div class="card-title">Risk-Empfehlung (letzte 5)</div><div id="risk-rec"></div></div>
       <div class="card"><div class="card-title">Setup-Analyse</div><div id="setup-analysis"></div></div>
-    </div>`;
+    </div>
+
+    <hr class="divider" style="margin:24px 0">
+    <div class="section-header"><span class="section-title">Monats-Review (Jeff Sun)</span></div>
+    <div class="card journal-table-wrap"><div class="card-title">Monatsverlauf</div><div id="monthly-table"></div></div>
+    <div class="card mt-16"><div class="card-title">Hyper-Active-Windows &nbsp;·&nbsp; ≥3 Entries in ≤3 Tagen</div><div id="hyper-windows"></div></div>`;
 
   document.getElementById('btn-refresh-stats').addEventListener('click', renderStats);
   renderStats();
@@ -1726,13 +1807,22 @@ function renderStats() {
 
   document.getElementById('kpi-hold').textContent = avgH != null ? avgH+'d' : '—';
 
+  // Trades chronologisch nach Exit-Datum (realisiertes R) — Fallback Kaufdatum
+  const chrono = [...trades].sort((a,b) =>
+    new Date(a.exit_datum||a.kaufdatum||0) - new Date(b.exit_datum||b.kaufdatum||0));
+
   // Equity curve
   const canvas = document.getElementById('chart-equity');
   if (canvas._chart) canvas._chart.destroy();
   let cum = 0;
   const labels = ['Start'];
   const data   = [0];
-  trades.forEach((t,i) => { cum += (t.pnl_r||0); labels.push(t.ticker||`#${i+1}`); data.push(+cum.toFixed(3)); });
+  chrono.forEach((t,i) => {
+    cum += (t.pnl_r||0);
+    const d = t.exit_datum || t.kaufdatum || '';
+    labels.push(d ? `${t.ticker} ${d.slice(8,10)}.${d.slice(5,7)}.` : (t.ticker||`#${i+1}`));
+    data.push(+cum.toFixed(3));
+  });
   const pos = cum >= 0;
   canvas._chart = new Chart(canvas.getContext('2d'), {
     type: 'line',
@@ -1747,8 +1837,8 @@ function renderStats() {
       } }
   });
 
-  // Risk recommendation
-  const last5  = trades.slice(-5);
+  // Risk recommendation — chronologisch letzte 5 Trades
+  const last5  = chrono.slice(-5);
   const rRec   = document.getElementById('risk-rec');
   if (last5.length >= 3) {
     const a5 = last5.reduce((s,t)=>s+(t.pnl_r||0),0)/last5.length;
@@ -1779,6 +1869,138 @@ function renderStats() {
           ${avg>=0?'+':''}${avg.toFixed(2)}R</span>
       </div>`;
     }).join('') || '<p class="text-muted">Noch keine Daten</p>';
+
+  renderMonthlyReview(trades);
+  renderHyperWindows(trades);
+}
+
+// ─── Jeff Sun: Monats-Verlauf (PF, Ø R-Verlust, Max R-Verlust, Verluststrecke) ───
+function renderMonthlyReview(trades) {
+  const el = document.getElementById('monthly-table');
+  if (!el) return;
+
+  // Outcome-Metriken nach exit_datum-Monat
+  const byMonth = {};
+  trades.filter(t => t.exit_datum).forEach(t => {
+    const k = monthKey(t.exit_datum);
+    (byMonth[k] = byMonth[k] || []).push(t);
+  });
+  const months = Object.keys(byMonth).sort();   // chronologisch aufsteigend
+  if (!months.length) { el.innerHTML = '<p class="text-muted">Noch keine abgeschlossenen Trades</p>'; return; }
+
+  const stats = months.map(k => {
+    const ts   = byMonth[k].slice().sort((a,b) => new Date(a.exit_datum) - new Date(b.exit_datum));
+    const rs   = ts.map(t => t.pnl_r || 0);
+    const wins = rs.filter(r => r > 0).length;
+    const gain = rs.filter(r => r > 0).reduce((s,r) => s+r, 0);
+    const loss = rs.filter(r => r < 0).reduce((s,r) => s+r, 0);     // negativ
+    const losers = rs.filter(r => r < 0);
+    const pf      = loss < 0 ? gain / Math.abs(loss) : (gain > 0 ? Infinity : 0);
+    const avgLoss = losers.length ? losers.reduce((s,r)=>s+r,0) / losers.length : 0;
+    const worst   = ts.reduce((w,t) => (t.pnl_r||0) < (w.pnl_r||0) ? t : w, ts[0]);
+    // längste Folge konsekutiver Verlust/BE-Trades (pnl_r <= 0)
+    let streak = 0, cur = 0;
+    rs.forEach(r => { if (r <= 0) { cur++; streak = Math.max(streak, cur); } else cur = 0; });
+    return { k, n: ts.length, winPct: wins/ts.length*100, pf, avgLoss, worst, streak };
+  });
+
+  // MoM-Trendpfeil: besser = grün. dir: +1 wenn "höher besser" (PF), -1 wenn "weniger negativ besser"
+  const arrow = (cur, prev, betterHigher) => {
+    if (prev == null || !isFinite(cur) || !isFinite(prev)) return '';
+    const eps = 1e-9;
+    if (Math.abs(cur - prev) < eps) return '';
+    const up = cur > prev;
+    const good = betterHigher ? up : !up;
+    return `<span style="color:${good?'var(--green)':'var(--red)'};font-size:11px;margin-left:4px">${up?'▲':'▼'}</span>`;
+  };
+  const pfTxt = v => v === Infinity ? '∞' : fmt(v, 2);
+
+  const rows = stats.map((s, i) => {
+    const p = i > 0 ? stats[i-1] : null;
+    const pfCol   = s.pf >= 1 ? 'var(--green)' : 'var(--red)';
+    const worstR  = s.worst.pnl_r || 0;
+    const worstBad = worstR < -1.0;   // Stop-Overrun: mehr verloren als geplant
+    return `<tr>
+      <td><strong class="text-mono">${monthLabel(s.k)}</strong></td>
+      <td class="mono">${s.n}</td>
+      <td class="mono">${fmt(s.winPct, 0)}%</td>
+      <td class="mono" style="color:${pfCol};font-weight:600">${pfTxt(s.pf)}${arrow(s.pf, p?p.pf:null, true)}</td>
+      <td class="mono" style="color:var(--amber)">${s.avgLoss ? fmt(s.avgLoss,2)+'R' : '—'}${arrow(s.avgLoss, p?p.avgLoss:null, false)}</td>
+      <td class="mono" style="color:${worstBad?'var(--red)':'var(--text-dim)'}">
+        ${fmt(worstR,2)}R <span style="color:var(--text-muted);font-size:11px">(${s.worst.ticker} · ${fmt(s.worst.pnl_abs)}€)</span>${arrow(worstR, p?(p.worst.pnl_r||0):null, false)}</td>
+      <td><span class="badge ${s.streak>=4?'badge-red':s.streak>=2?'badge-amber':'badge-gray'}">${s.streak}</span></td>
+    </tr>`;
+  }).join('');
+
+  el.innerHTML = `<table>
+    <thead><tr>
+      <th>Monat</th><th>Trades</th><th>Win%</th><th>PF (R)</th>
+      <th>Ø R-Verlust</th><th>Max R-Verlust</th><th>Verluststrecke</th>
+    </tr></thead>
+    <tbody>${rows}</tbody>
+  </table>
+  <p class="text-muted" style="margin-top:10px">
+    PF = Σ Gewinn-R / |Σ Verlust-R| (≥1 profitabel) · rote Max-R-Verluste = &lt;-1R (mehr verloren als geplant) · Pfeil = Trend vs. Vormonat
+  </p>`;
+}
+
+// ─── Jeff Sun: Hyper-Active-Windows (Cluster neuer Entries = Chasing-Detektor) ───
+function renderHyperWindows(trades) {
+  const el = document.getElementById('hyper-windows');
+  if (!el) return;
+
+  const DAY = 86400000;
+  const ts  = trades.filter(t => t.kaufdatum)
+                    .slice().sort((a,b) => new Date(a.kaufdatum) - new Date(b.kaufdatum));
+
+  // Maximale Cluster: aufeinanderfolgende Entries, deren Gesamt-Spanne ≤ 3 Tage bleibt
+  const clusters = [];
+  let cur = [];
+  ts.forEach(t => {
+    if (!cur.length) { cur = [t]; return; }
+    const spanDays = (new Date(t.kaufdatum) - new Date(cur[0].kaufdatum)) / DAY;
+    if (spanDays <= 3) cur.push(t);
+    else { if (cur.length >= 3) clusters.push(cur); cur = [t]; }
+  });
+  if (cur.length >= 3) clusters.push(cur);
+
+  if (!clusters.length) {
+    el.innerHTML = '<p class="text-muted">Keine Hyper-Active-Windows — sauberes Entry-Tempo ✓</p>';
+    return;
+  }
+
+  el.innerHTML = clusters.reverse().map(c => {
+    const key      = `${c[0].kaufdatum}_${c[c.length-1].kaufdatum}`;
+    const losers   = c.filter(t => (t.pnl_r||0) < 0).length;   // Verlust-Trades (nicht Trailing-Stops auf Gewinner)
+    const sumR     = c.reduce((s,t) => s+(t.pnl_r||0), 0);
+    const tickers  = c.map(t => t.ticker).join(', ');
+    const badRate  = losers / c.length >= 0.6;
+    return `<div style="padding:12px 0;border-bottom:1px solid var(--border)">
+      <div style="display:flex;align-items:center;gap:10px;flex-wrap:wrap;margin-bottom:6px">
+        <strong class="text-mono">${fmtDate(c[0].kaufdatum)}–${fmtDate(c[c.length-1].kaufdatum)}</strong>
+        <span class="badge badge-blue">${c.length} Entries</span>
+        <span class="badge ${badRate?'badge-red':'badge-gray'}">${losers}/${c.length} Verlust</span>
+        <span class="mono" style="color:${sumR>=0?'var(--green)':'var(--red)'};font-size:12px">${sumR>=0?'+':''}${fmt(sumR,2)}R gesamt</span>
+      </div>
+      <div class="text-muted" style="margin-bottom:6px">${tickers}</div>
+      <input type="text" class="hyper-note" data-key="${key}"
+        value="${(reviewNotes[key]||'').replace(/"/g,'&quot;')}"
+        placeholder="QQQ/SPY-Spot vs 10/20-MA + 10d-Breite am Entry-Tag…"
+        style="font-size:12px;padding:6px 9px">
+    </div>`;
+  }).join('');
+
+  el.querySelectorAll('.hyper-note').forEach(inp => {
+    inp.addEventListener('change', async e => {
+      const key = e.target.dataset.key;
+      reviewNotes[key] = e.target.value;
+      try {
+        await setDoc(doc(db, 'users', auth.currentUser.uid, 'settings', 'review_notes'),
+                     { windows: reviewNotes }, { merge: true });
+        showToast('Notiz gespeichert', 'success');
+      } catch (err) { showToast('Speichern fehlgeschlagen', 'error'); }
+    });
+  });
 }
 
 // ═══════════════════════════════════════════════════════════════════════════════
