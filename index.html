@@ -843,7 +843,7 @@ function recalc() {
 }
 
 function saveTrade() {
-  const { ticker, limit, stopp, shares, riskEur, riskStufe, oneR, edgeCount, edgeMulti } = calcState;
+  const { ticker, limit, stopp, shares, riskEur, riskStufe, oneR, edgeCount, edgeMulti, atr, riskAtr } = calcState;
   if (!ticker)    return showToast('Ticker fehlt', 'error');
   if (!(limit > 0)) return showToast('Entry/Limit fehlt', 'error');
   if (!(stopp > 0)) return showToast('Stopp fehlt', 'error');
@@ -865,6 +865,8 @@ function saveTrade() {
     risk_eur:       +riskEur.toFixed(2),
     edge_count:     edgeCount,
     edge_multi:     edgeMulti,
+    atr_pct:        atr,
+    risk_atr:       +(riskAtr || 0).toFixed(3),
     setup_grad:     document.getElementById('c-setup').value,
     theme:          document.getElementById('c-theme').value,
     fomo:           calcState.fomo,
@@ -1054,6 +1056,10 @@ function renderKandidaten() {
         const kaufdatum = document.getElementById('ef-datum').value;
         if (!kaufkurs) return showToast('Kaufkurs eingeben', 'error');
         const rps = kaufkurs - k.stopp_hard;
+        // Risk/ATR am TATSAECHLICHEN Kaufkurs neu rechnen — der geplante Wert des
+        // Kandidaten gilt nur fuer den geplanten Entry.
+        const riskPctAkt = kaufkurs > 0 ? rps / kaufkurs * 100 : 0;
+        const riskAtrAkt = (k.atr_pct > 0 && riskPctAkt > 0) ? +(k.atr_pct / riskPctAkt).toFixed(3) : 0;
         const pos = {
           id: genId(), ticker: k.ticker,
           kaufdatum: kaufdatum || new Date().toISOString().split('T')[0],
@@ -1066,6 +1072,8 @@ function renderKandidaten() {
           risk_pct: k.risk_pct,
           risk_eur: +((kaufkurs - k.stopp_hard) * k.aktien).toFixed(2),
           edge_count: k.edge_count, setup_grad: k.setup_grad,
+          atr_pct: k.atr_pct || 0,
+          risk_atr: riskAtrAkt,
           theme: k.theme, fomo: k.fomo,
           oneR: +(kaufkurs + (kaufkurs - k.stopp_hard)).toFixed(4),
           teilverkäufe: [], status: 'offen',
