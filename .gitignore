@@ -3,7 +3,9 @@
 *.png
 trading_tool_v1.html
 trading-tool-181ce-firebase-adminsdk-fbsvc-e37af9bb04.json
-firebase.json
+# firebase.json wird versioniert (seit 13.8.2026) — sie enthaelt die
+# hosting.ignore-Liste, die .git/ vom Deploy ausschliesst. Ging sie
+# verloren, waere die Historie wieder oeffentlich erreichbar.
 .firebaserc
 .firebaseignore
 .firebase/
