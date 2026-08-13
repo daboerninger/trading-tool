@@ -805,12 +805,15 @@ function recalc() {
 
   // Risk/ATR Anzeige
   const riskPct = limit > 0 && riskPerShare > 0 ? riskPerShare / limit * 100 : 0;
-  const riskAtr = atr > 0 && riskPct > 0 ? atr / riskPct : 0;
+  // KANONISCH: Stop-Distanz / ATR%. trading_rules.json golden_rules[3] +
+  // entry_process.mandatory_checks.stop_vs_atr: "Stop must be < 1x ATR — ideally
+  // significantly below". Kleiner = besser. (Vorher invertiert: atr / riskPct.)
+  const riskAtr = atr > 0 && riskPct > 0 ? riskPct / atr : 0;
   const raEl = document.getElementById('r-risk-atr');
   if (raEl) {
     if (riskAtr > 0) {
-      const raColor = riskAtr >= 2 ? 'var(--green)' : riskAtr >= 1 ? 'var(--amber)' : 'var(--red)';
-      const raLabel = riskAtr >= 3 ? 'sehr gut' : riskAtr >= 2 ? 'gut' : riskAtr >= 1 ? 'grenzwertig' : 'kein Trade';
+      const raColor = riskAtr <= 0.5 ? 'var(--green)' : riskAtr <= 1 ? 'var(--amber)' : 'var(--red)';
+      const raLabel = riskAtr <= 0.333 ? 'sehr gut' : riskAtr <= 0.5 ? 'gut' : riskAtr <= 1 ? 'grenzwertig' : 'kein Trade';
       raEl.innerHTML = `Risk/ATR: <span style="color:${raColor};font-weight:600">${fmt(riskAtr,2)}</span> <span style="color:${raColor};font-size:11px">(${raLabel})</span>`;
     } else {
       raEl.textContent = atr > 0 ? 'Risk/ATR: — (Stopp fehlt)' : 'ATR% eingeben für Risk/ATR';
@@ -867,6 +870,7 @@ function saveTrade() {
     edge_multi:     edgeMulti,
     atr_pct:        atr,
     risk_atr:       +(riskAtr || 0).toFixed(3),
+    risk_atr_konv:  'risk/atr',
     setup_grad:     document.getElementById('c-setup').value,
     theme:          document.getElementById('c-theme').value,
     fomo:           calcState.fomo,
@@ -931,6 +935,7 @@ function saveKandidat() {
     risk_share_pct: +riskPct.toFixed(3),
     atr_pct:    atr,
     risk_atr:   +riskAtr.toFixed(3),
+    risk_atr_konv: 'risk/atr',
     oneR:       +oneR.toFixed(4),
     edge_count: edgeCount,
     setup_grad: document.getElementById('c-setup').value,
@@ -965,11 +970,21 @@ function initKandidaten() {
   renderKandidaten();
 }
 
+// Liefert risk_atr IMMER in der kanonischen Richtung (Stop/ATR, kleiner = besser).
+// Datensaetze OHNE risk_atr_konv stammen aus der invertierten Rechnung (ATR/Stop)
+// und werden fuer Anzeige und Sortierung umgerechnet — sonst laesen sich alte
+// Kandidaten nach dem Fix als "kein Trade".
+function riskAtrKanonisch(k) {
+  const v = k && k.risk_atr;
+  if (!v || v <= 0) return 0;
+  return k.risk_atr_konv === 'risk/atr' ? v : +(1 / v).toFixed(3);
+}
+
 function renderKandidaten() {
   const list = document.getElementById('kandidaten-list');
   if (!list) return;
   const all = LS.get(KEY_KANDIDATEN).filter(k => k.status === 'kandidat')
-    .sort((a,b) => (b.risk_atr||0) - (a.risk_atr||0)); // beste zuerst
+    .sort((a,b) => (riskAtrKanonisch(a) || 99) - (riskAtrKanonisch(b) || 99)); // beste (= kleinste) zuerst
 
   if (!all.length) {
     list.innerHTML = `<div class="empty-state"><p>Keine Kandidaten — im Rechner "Zu Kandidaten" klicken</p></div>`;
@@ -997,19 +1012,20 @@ function renderKandidaten() {
         </tr></thead>
         <tbody>
           ${all.map(k => {
-            const raColor = !k.risk_atr ? 'var(--text-muted)'
-              : k.risk_atr >= 2 ? 'var(--green)'
-              : k.risk_atr >= 1 ? 'var(--amber)'
+            const ra = riskAtrKanonisch(k);
+            const raColor = !ra ? 'var(--text-muted)'
+              : ra <= 0.5 ? 'var(--green)'
+              : ra <= 1 ? 'var(--amber)'
               : 'var(--red)';
-            const raBg = !k.risk_atr ? ''
-              : k.risk_atr >= 2 ? 'background:var(--green-dim)'
-              : k.risk_atr >= 1 ? 'background:var(--amber-dim)'
+            const raBg = !ra ? ''
+              : ra <= 0.5 ? 'background:var(--green-dim)'
+              : ra <= 1 ? 'background:var(--amber-dim)'
               : 'background:var(--red-dim)';
-            const raLabel = !k.risk_atr ? '—'
-              : k.risk_atr >= 3 ? `${fmt(k.risk_atr,2)} ★★`
-              : k.risk_atr >= 2 ? `${fmt(k.risk_atr,2)} ★`
-              : k.risk_atr >= 1 ? fmt(k.risk_atr,2)
-              : `${fmt(k.risk_atr,2)} ✗`;
+            const raLabel = !ra ? '—'
+              : ra <= 0.333 ? `${fmt(ra,2)} ★★`
+              : ra <= 0.5 ? `${fmt(ra,2)} ★`
+              : ra <= 1 ? fmt(ra,2)
+              : `${fmt(ra,2)} ✗`;
             return `<tr>
               <td><strong class="text-mono">${k.ticker}</strong>${k.fomo ? ' <span class="badge badge-amber" style="font-size:9px">FOMO</span>' : ''}</td>
               <td>${fmtDate(k.datum)}</td>
@@ -1059,7 +1075,7 @@ function renderKandidaten() {
         // Risk/ATR am TATSAECHLICHEN Kaufkurs neu rechnen — der geplante Wert des
         // Kandidaten gilt nur fuer den geplanten Entry.
         const riskPctAkt = kaufkurs > 0 ? rps / kaufkurs * 100 : 0;
-        const riskAtrAkt = (k.atr_pct > 0 && riskPctAkt > 0) ? +(k.atr_pct / riskPctAkt).toFixed(3) : 0;
+        const riskAtrAkt = (k.atr_pct > 0 && riskPctAkt > 0) ? +(riskPctAkt / k.atr_pct).toFixed(3) : 0;
         const pos = {
           id: genId(), ticker: k.ticker,
           kaufdatum: kaufdatum || new Date().toISOString().split('T')[0],
@@ -1074,6 +1090,7 @@ function renderKandidaten() {
           edge_count: k.edge_count, setup_grad: k.setup_grad,
           atr_pct: k.atr_pct || 0,
           risk_atr: riskAtrAkt,
+          risk_atr_konv: 'risk/atr',
           theme: k.theme, fomo: k.fomo,
           oneR: +(kaufkurs + (kaufkurs - k.stopp_hard)).toFixed(4),
           teilverkäufe: [], status: 'offen',
@@ -1152,7 +1169,7 @@ function renderKandidaten() {
         if (!entry || !stopp || !aktien) return showToast('Limit, Stopp und Stückzahl erforderlich', 'error');
         const riskPerShare = entry - stopp;
         const riskPct      = riskPerShare / entry * 100;
-        const riskAtr      = atr > 0 ? atr / riskPct : 0;
+        const riskAtr      = atr > 0 && riskPct > 0 ? riskPct / atr : 0;
         const all = LS.get(KEY_KANDIDATEN);
         const idx = all.findIndex(x => x.id === k.id);
         if (idx < 0) return;
@@ -1168,6 +1185,7 @@ function renderKandidaten() {
           pos_groesse:    +(entry * aktien).toFixed(2),
           atr_pct:        atr || all[idx].atr_pct,
           risk_atr:       +riskAtr.toFixed(3),
+          risk_atr_konv:  'risk/atr',
           theme:          document.getElementById('ek-theme').value || all[idx].theme,
         };
         LS.set(KEY_KANDIDATEN, all);
