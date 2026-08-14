@@ -292,29 +292,6 @@
   </div>
 </div>
 
-<div class="modal-overlay" id="modal-edit-kandidat">
-  <div class="modal">
-    <div class="modal-title">Kandidat bearbeiten</div>
-    <div class="grid-2 mb-12">
-      <div class="field"><label>Ticker</label><input type="text" id="ek-ticker" style="text-transform:uppercase"></div>
-      <div class="field"><label>Stückzahl</label><input type="number" id="ek-aktien"></div>
-    </div>
-    <div class="grid-3 mb-12">
-      <div class="field"><label>Kauf Trigger (€)</label><input type="number" id="ek-trigger" step="0.01" placeholder="z.B. 100.00"></div>
-      <div class="field"><label>Limit (€)</label><input type="number" id="ek-entry" step="0.01" placeholder="z.B. 100.25"></div>
-      <div class="field"><label>Hard Stopp (€)</label><input type="number" id="ek-stopp" step="0.01"></div>
-    </div>
-    <div class="grid-2 mb-12">
-      <div class="field"><label>ATR%</label><input type="number" id="ek-atr" step="0.1" placeholder="optional"></div>
-      <div class="field"><label>Theme</label><input type="text" id="ek-theme" placeholder="optional"></div>
-    </div>
-    <div class="modal-actions">
-      <button class="btn btn-ghost" id="btn-ek-cancel">Abbrechen</button>
-      <button class="btn btn-primary" id="btn-ek-save">Speichern</button>
-    </div>
-  </div>
-</div>
-
 <div class="modal-overlay" id="modal-erfassen">
   <div class="modal">
     <div class="modal-title">Position erfassen</div>
@@ -543,7 +520,6 @@ document.querySelectorAll('.modal-overlay').forEach(o =>
 document.getElementById('btn-tv-cancel').onclick  = () => closeModal('modal-teilverkauf');
 document.getElementById('btn-cp-cancel').onclick  = () => closeModal('modal-close-pos');
 document.getElementById('btn-ef-cancel').onclick  = () => closeModal('modal-erfassen');
-document.getElementById('btn-ek-cancel').onclick  = () => closeModal('modal-edit-kandidat');
 document.getElementById('btn-pass-cancel').onclick = () => closeModal('modal-pass-grund');
 document.getElementById('btn-pass-save').onclick   = () => {
   const grund = document.getElementById('pg-grund').value.trim();
@@ -607,6 +583,12 @@ const EDGE_CRITERIA = [
 
 let calcState = { edgeCount: 0, ticker: '', limit: 0, stopp: 0, shares: 0, riskEur: 0,
   entry: 0, lod: 0, riskPerShare: 0, posSize: 0, oneR: 0, fomo: false, depot: 0, riskStufe: 0.5 };
+
+// Gesetzt, solange der Rechner einen BESTEHENDEN Kandidaten bearbeitet (statt einen neuen
+// anzulegen). Der Rechner ist seit 14.8.2026 der einzige Schreibpfad fuer Kandidaten — das
+// frühere Bearbeiten-Modal hatte die Rechenlogik dupliziert und war auseinandergelaufen
+// (`oneR` bedeutete dort den Risiko-Betrag statt des Kursziels).
+let calcEditId = null;
 
 async function bootstrap() {
   await loadFromFirestore();
@@ -682,6 +664,15 @@ function initCalc() {
               <select id="c-fomo"><option value="false" selected>Nein</option><option value="true">Ja</option></select>
             </div>
           </div>
+          <div class="grid-2 mt-12">
+            <div class="field"><label>Trail-Modus</label>
+              <select id="c-modus">
+                <option value="" selected>— noch offen</option>
+                <option value="A">A — Raum, länger halten</option>
+                <option value="B">B — eng, schnell</option>
+              </select>
+            </div>
+          </div>
         </div>
       </div>
 
@@ -700,9 +691,11 @@ function initCalc() {
         <div class="card-title">Checks</div>
         <div class="checks-list" id="checks-list"></div>
         <div id="r-risk-atr" style="margin:8px 0 4px;text-align:center;font-family:'DM Mono',monospace;font-size:13px;color:var(--text-muted)"></div>
+        <div id="calc-edit-hint" style="display:none;padding:8px 10px;border-radius:var(--radius-sm);background:var(--accent-dim);color:var(--accent);font-size:12px;margin-bottom:8px"></div>
         <div class="btn-row" style="flex-direction:column;gap:6px">
           <button class="btn btn-ghost w-full" id="btn-kandidat">Zu Kandidaten</button>
-          <div style="display:flex;gap:6px">
+          <button class="btn btn-ghost w-full" id="btn-kandidat-cancel" style="display:none">Bearbeiten abbrechen</button>
+          <div style="display:flex;gap:6px" id="calc-trade-row">
             <button class="btn btn-primary" id="btn-trade" style="flex:1">Trade erfassen</button>
             <button class="btn btn-ghost" id="btn-pass" style="flex:1">Passed Trade</button>
           </div>
@@ -738,30 +731,118 @@ function initCalc() {
     recalc();
   });
 
-  function updateEdgeRecommendation(n) {
-    const el = document.getElementById('edge-recommendation');
-    if (n === 0) { el.style.display = 'none'; return; }
-    let bg, color, title, text;
-    if (n <= 3) {
-      bg = 'var(--amber-dim)'; color = 'var(--amber)';
-      title = '50% — Pilot';
-      text  = '· zu viele Fragezeichen';
-    } else if (n <= 5) {
-      bg = 'var(--accent-dim)'; color = 'var(--accent)';
-      title = '100% — Standard';
-      text  = '· solides Setup';
-    } else {
-      bg = 'var(--green-dim)'; color = 'var(--green)';
-      title = '125% — Overweight';
-      text  = '· alles aligned';
-    }
-    el.style.display  = 'block';
-    el.style.background = bg;
-    el.innerHTML = `<span style="font-weight:600;color:${color}">${title}</span><span style="color:var(--text-dim);margin-left:8px;font-size:12px">${text}</span>`;
-  }
   document.getElementById('btn-trade').addEventListener('click', saveTrade);
   document.getElementById('btn-pass').addEventListener('click', savePass);
   document.getElementById('btn-kandidat').addEventListener('click', saveKandidat);
+  document.getElementById('btn-kandidat-cancel').addEventListener('click', exitCalcEditMode);
+  applyCalcEditMode();
+}
+
+// Modul-Scope, damit loadKandidatIntoCalc() sie ebenfalls aufrufen kann.
+function updateEdgeRecommendation(n) {
+  const el = document.getElementById('edge-recommendation');
+  if (!el) return;
+  if (n === 0) { el.style.display = 'none'; return; }
+  let bg, color, title, text;
+  if (n <= 3) {
+    bg = 'var(--amber-dim)'; color = 'var(--amber)';
+    title = '50% — Pilot';
+    text  = '· zu viele Fragezeichen';
+  } else if (n <= 5) {
+    bg = 'var(--accent-dim)'; color = 'var(--accent)';
+    title = '100% — Standard';
+    text  = '· solides Setup';
+  } else {
+    bg = 'var(--green-dim)'; color = 'var(--green)';
+    title = '125% — Overweight';
+    text  = '· alles aligned';
+  }
+  el.style.display  = 'block';
+  el.style.background = bg;
+  el.innerHTML = `<span style="font-weight:600;color:${color}">${title}</span><span style="color:var(--text-dim);margin-left:8px;font-size:12px">${text}</span>`;
+}
+
+// Schaltet die Rechner-Oberflaeche zwischen "neuen Kandidaten anlegen" und "bestehenden
+// bearbeiten". Muss nach JEDEM initCalc() erneut laufen, weil initCalc das innerHTML neu baut.
+function applyCalcEditMode() {
+  const editing = !!calcEditId;
+  const btn     = document.getElementById('btn-kandidat');
+  const cancel  = document.getElementById('btn-kandidat-cancel');
+  const hint    = document.getElementById('calc-edit-hint');
+  const trades  = document.getElementById('calc-trade-row');
+  if (!btn) return;
+  btn.textContent = editing ? 'Kandidat aktualisieren' : 'Zu Kandidaten';
+  btn.classList.toggle('btn-primary', editing);
+  btn.classList.toggle('btn-ghost',  !editing);
+  if (cancel) cancel.style.display = editing ? '' : 'none';
+  // "Trade erfassen"/"Passed" wuerden einen NEUEN Datensatz aus calcState bauen und nicht den
+  // bearbeiteten Kandidaten betreffen — im Editiermodus deshalb ausgeblendet.
+  if (trades) trades.style.display = editing ? 'none' : 'flex';
+  if (hint)   hint.style.display   = editing ? '' : 'none';
+}
+
+function exitCalcEditMode() {
+  calcEditId = null;
+  initialized['calc'] = false;
+  initialized['kandidaten'] = false;
+  document.querySelector('[data-tab="kandidaten"]').click();
+}
+
+// Laedt einen bestehenden Kandidaten zurueck in den Rechner. Felder, die vor dem 14.8.2026
+// nicht gespeichert wurden (Puffer, Multiplikator, Edge-Auswahl), werden aus den vorhandenen
+// Werten abgeleitet. MUSS nach initCalc() laufen — initCalc baut das innerHTML neu auf.
+function loadKandidatIntoCalc(k) {
+  const depot = parseFloat(localStorage.getItem('tt_depot')) || 0;
+  const set = (id, v) => { const el = document.getElementById(id); if (el) el.value = v; };
+
+  set('c-ticker', k.ticker || '');
+  if (depot) set('c-depot', depot);
+  set('c-risk',  k.risk_pct || 0.5);
+  set('c-entry', k.entry_trigger ?? '');
+  set('c-lod',   k.lod ?? '');
+  set('c-atr',   k.atr_pct || '');
+  set('c-theme', k.theme || '');
+  set('c-setup', k.setup_grad || 'B');
+  set('c-fomo',  k.fomo ? 'true' : 'false');
+  set('c-modus', k.modus || '');
+
+  // Puffer: seit 14.8. gespeichert, davor aus Trigger/Limit bzw. LOD/Stopp zurueckgerechnet.
+  const limitPuffer = k.limit_puffer ?? (k.entry_trigger > 0 && k.entry > 0
+    ? (k.entry / k.entry_trigger - 1) * 100 : 0.25);
+  const stoppPuffer = k.stopp_puffer ?? (k.lod > 0 && k.stopp_hard > 0
+    ? (1 - k.stopp_hard / k.lod) * 100 : 0.25);
+  set('c-limit-puffer', +limitPuffer.toFixed(4));
+  set('c-stopp-puffer', +stoppPuffer.toFixed(4));
+
+  // Multiplikator: seit 14.8. gespeichert, davor aus dem geplanten Risiko zurueckgerechnet.
+  let multi = k.edge_multi;
+  if (!multi && depot > 0 && k.risk_pct > 0 && k.risk_eur > 0) {
+    const raw = k.risk_eur / (depot * k.risk_pct / 100);
+    multi = [0.5, 1, 1.25].reduce((a, b) => Math.abs(b - raw) < Math.abs(a - raw) ? b : a, 1);
+  }
+  set('c-edge-multi', multi || 1);
+
+  // Edge-Auswahl: seit 14.8. als Array. Alt-Kandidaten kennen nur die ANZAHL — dann die ersten
+  // n Boxen anhaken und das im Hinweis ausdruecklich als Naeherung kennzeichnen.
+  const edges = Array.isArray(k.edges) ? k.edges : null;
+  const n = k.edge_count || 0;
+  document.querySelectorAll('#edge-grid .edge-check').forEach((lab, i) => {
+    const on = edges ? !!edges[i] : i < n;
+    const box = lab.querySelector('input');
+    if (box) box.checked = on;
+    lab.classList.toggle('checked', on);
+  });
+  calcState.edgeCount = document.querySelectorAll('#edge-grid input:checked').length;
+  const disp = document.getElementById('edge-display');
+  if (disp) disp.textContent = calcState.edgeCount;
+  updateEdgeRecommendation(calcState.edgeCount);
+
+  const hint = document.getElementById('calc-edit-hint');
+  if (hint) {
+    hint.innerHTML = `Bearbeite <strong>${k.ticker}</strong>`
+      + (edges ? '' : ` · ⚠️ Edge-Auswahl war nicht gespeichert — die ersten ${n} Kriterien sind als Näherung angehakt, bitte prüfen`);
+  }
+  recalc();
 }
 
 function recalc() {
@@ -920,10 +1001,12 @@ function saveKandidat() {
   if (!(limit > 0)) return showToast('Entry/Limit fehlt', 'error');
   if (!(stopp > 0)) return showToast('Stopp fehlt', 'error');
 
-  const k = {
-    id:           genId(),
+  // Seit 14.8.2026 mitgespeichert, damit sich der Rechner-Zustand spaeter EXAKT
+  // rekonstruieren laesst: welche Edges angehakt waren, beide Puffer, der Multiplikator.
+  const edges = [...document.querySelectorAll('#edge-grid .edge-check input')].map(b => b.checked);
+
+  const felder = {
     ticker,
-    datum:        new Date().toISOString(),
     entry_trigger:+calcState.entry.toFixed(4),
     entry:        +limit.toFixed(4),
     lod:          +calcState.lod.toFixed(4),
@@ -938,19 +1021,36 @@ function saveKandidat() {
     risk_atr_konv: 'risk/atr',
     oneR:       +oneR.toFixed(4),
     edge_count: edgeCount,
+    edges,
+    limit_puffer: calcState.limitPuffer,
+    stopp_puffer: calcState.stoppPuffer,
+    edge_multi:   calcState.edgeMulti,
     setup_grad: document.getElementById('c-setup').value,
     theme:      document.getElementById('c-theme').value,
+    modus:      document.getElementById('c-modus')?.value || '',
     fomo:       calcState.fomo,
-    status:     'kandidat',
   };
 
   const all = LS.get(KEY_KANDIDATEN);
-  all.push(k);
-  LS.set(KEY_KANDIDATEN, all);
-  showToast(`${ticker} zu Kandidaten hinzugefügt`, 'info');
 
-  // Firebase (still im Hintergrund)
-  saveToFirestore('kandidaten', k);
+  if (calcEditId) {
+    // BEARBEITEN — id, datum und status bleiben erhalten, damit der Kandidat derselbe bleibt
+    // und nicht als Dublette auftaucht.
+    const idx = all.findIndex(x => x.id === calcEditId);
+    if (idx < 0) { calcEditId = null; return showToast('Kandidat nicht mehr vorhanden', 'error'); }
+    all[idx] = { ...all[idx], ...felder };
+    LS.set(KEY_KANDIDATEN, all);
+    saveToFirestore('kandidaten', all[idx]);
+    showToast(`${ticker} aktualisiert`, 'success');
+    calcEditId = null;
+    initialized['calc'] = false;
+  } else {
+    const k = { id: genId(), datum: new Date().toISOString(), ...felder, status: 'kandidat' };
+    all.push(k);
+    LS.set(KEY_KANDIDATEN, all);
+    saveToFirestore('kandidaten', k);
+    showToast(`${ticker} zu Kandidaten hinzugefügt`, 'info');
+  }
 
   // Tab wechseln & Liste sofort aktualisieren
   initialized['kandidaten'] = false;
@@ -964,7 +1064,7 @@ function initKandidaten() {
   document.getElementById('tab-kandidaten').innerHTML = `
     <div class="section-header">
       <span class="section-title">Trade Kandidaten</span>
-      <span class="text-muted">Risk/ATR = ATR% ÷ Risk% — Minimum 1, ideal ≥ 2</span>
+      <span class="text-muted">Risk/ATR = Stopp% ÷ ATR% — kleiner ist besser · ≤0,33 ★★ · ≤0,5 ★ · >1 kein Trade</span>
     </div>
     <div id="kandidaten-list"></div>`;
   renderKandidaten();
@@ -1076,6 +1176,12 @@ function renderKandidaten() {
         // Kandidaten gilt nur fuer den geplanten Entry.
         const riskPctAkt = kaufkurs > 0 ? rps / kaufkurs * 100 : 0;
         const riskAtrAkt = (k.atr_pct > 0 && riskPctAkt > 0) ? +(riskPctAkt / k.atr_pct).toFixed(3) : 0;
+        const riskEurAkt = +((kaufkurs - k.stopp_hard) * k.aktien).toFixed(2);
+        // risk_pct aus dem TATSAECHLICHEN Risiko rechnen, nicht aus der Planung uebernehmen.
+        // Sonst stehen sich die beiden Felder widersprechen: bei AXTI 14.8. lag die geplante
+        // Stufe bei 0,5 %, das reale Risiko einer Aktie aber bei 8,15 EUR = 0,43 %.
+        const depotAkt   = parseFloat(localStorage.getItem('tt_depot')) || 0;
+        const riskPctAktDepot = depotAkt > 0 ? +(riskEurAkt / depotAkt * 100).toFixed(3) : k.risk_pct;
         const pos = {
           id: genId(), ticker: k.ticker,
           kaufdatum: kaufdatum || new Date().toISOString().split('T')[0],
@@ -1085,13 +1191,18 @@ function renderKandidaten() {
           stopp_033r: +(k.stopp_hard + rps * 0.67).toFixed(4),
           stopp_breakeven: +(kaufkurs * 1.0025).toFixed(4),
           stopp_aktuell: k.stopp_hard,
-          risk_pct: k.risk_pct,
-          risk_eur: +((kaufkurs - k.stopp_hard) * k.aktien).toFixed(2),
+          risk_pct: riskPctAktDepot,
+          risk_pct_geplant: k.risk_pct,
+          risk_eur: riskEurAkt,
           edge_count: k.edge_count, setup_grad: k.setup_grad,
           atr_pct: k.atr_pct || 0,
           risk_atr: riskAtrAkt,
           risk_atr_konv: 'risk/atr',
           theme: k.theme, fomo: k.fomo,
+          // Trail-Modus aus dem Kandidaten uebernehmen — bis 14.8.2026 fehlte das Feld ganz,
+          // weshalb `modus` in Positionen viermal verlorenging und aus den Research-Dateien
+          // rekonstruiert werden musste.
+          modus: k.modus || '',
           oneR: +(kaufkurs + (kaufkurs - k.stopp_hard)).toFixed(4),
           teilverkäufe: [], status: 'offen',
         };
@@ -1146,54 +1257,18 @@ function renderKandidaten() {
     });
   });
 
-  // Bearbeiten
+  // Bearbeiten — laedt den Kandidaten in den RECHNER (seit 14.8.2026 der einzige Schreibpfad).
+  // Das frühere Modal hatte die Rechenlogik dupliziert und konnte nur 7 von 14 Feldern.
   list.querySelectorAll('.btn-k-edit').forEach(btn => {
     btn.addEventListener('click', () => {
       const k = LS.get(KEY_KANDIDATEN).find(x => x.id === btn.dataset.id);
       if (!k) return;
-      document.getElementById('ek-ticker').value  = k.ticker        || '';
-      document.getElementById('ek-aktien').value  = k.aktien        || '';
-      document.getElementById('ek-trigger').value = k.entry_trigger || k.entry || '';
-      document.getElementById('ek-entry').value   = k.entry         || '';
-      document.getElementById('ek-stopp').value   = k.stopp_hard    || '';
-      document.getElementById('ek-atr').value    = k.atr_pct || '';
-      document.getElementById('ek-theme').value  = k.theme || '';
-      openModal('modal-edit-kandidat');
-
-      document.getElementById('btn-ek-save').onclick = () => {
-        const trigger = parseFloat(document.getElementById('ek-trigger').value);
-        const entry   = parseFloat(document.getElementById('ek-entry').value);
-        const stopp   = parseFloat(document.getElementById('ek-stopp').value);
-        const aktien  = parseInt(document.getElementById('ek-aktien').value);
-        const atr     = parseFloat(document.getElementById('ek-atr').value) || 0;
-        if (!entry || !stopp || !aktien) return showToast('Limit, Stopp und Stückzahl erforderlich', 'error');
-        const riskPerShare = entry - stopp;
-        const riskPct      = riskPerShare / entry * 100;
-        const riskAtr      = atr > 0 && riskPct > 0 ? riskPct / atr : 0;
-        const all = LS.get(KEY_KANDIDATEN);
-        const idx = all.findIndex(x => x.id === k.id);
-        if (idx < 0) return;
-        all[idx] = { ...all[idx],
-          ticker:         document.getElementById('ek-ticker').value.toUpperCase() || all[idx].ticker,
-          aktien,
-          entry_trigger:  trigger || all[idx].entry_trigger,
-          entry,
-          stopp_hard:     stopp,
-          oneR:           +riskPerShare.toFixed(4),
-          risk_eur:       +(riskPerShare * aktien).toFixed(2),
-          risk_share_pct: +riskPct.toFixed(3),
-          pos_groesse:    +(entry * aktien).toFixed(2),
-          atr_pct:        atr || all[idx].atr_pct,
-          risk_atr:       +riskAtr.toFixed(3),
-          risk_atr_konv:  'risk/atr',
-          theme:          document.getElementById('ek-theme').value || all[idx].theme,
-        };
-        LS.set(KEY_KANDIDATEN, all);
-        saveToFirestore('kandidaten', all[idx]);
-        closeModal('modal-edit-kandidat');
-        showToast('Kandidat aktualisiert', 'success');
-        renderKandidaten();
-      };
+      // Reihenfolge ist zwingend: initCalc() baut das innerHTML neu auf und wuerde jede
+      // vorher gesetzte Eingabe wieder ueberschreiben.
+      calcEditId = k.id;
+      initialized['calc'] = false;
+      document.querySelector('[data-tab="calc"]').click();
+      loadKandidatIntoCalc(k);
     });
   });
 
