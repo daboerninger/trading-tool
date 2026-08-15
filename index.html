@@ -886,15 +886,16 @@ function recalc() {
 
   // Risk/ATR Anzeige
   const riskPct = limit > 0 && riskPerShare > 0 ? riskPerShare / limit * 100 : 0;
-  // KANONISCH: Stop-Distanz / ATR%. trading_rules.json golden_rules[3] +
-  // entry_process.mandatory_checks.stop_vs_atr: "Stop must be < 1x ATR — ideally
-  // significantly below". Kleiner = besser. (Vorher invertiert: atr / riskPct.)
-  const riskAtr = atr > 0 && riskPct > 0 ? riskPct / atr : 0;
+  // KANONISCH: ATR% / Stop-Distanz. Daniels Konvention (bestaetigt 15.8.2026):
+  // ist das Risiko kleiner als der ATR, ist der Wert GROESSER 1. Deckt sich mit
+  // trading_rules.json golden_rules[3] "Stop must be < 1x ATR — ideally significantly
+  // below" — Minimum 1, ideal >= 2. GROESSER = BESSER.
+  const riskAtr = atr > 0 && riskPct > 0 ? atr / riskPct : 0;
   const raEl = document.getElementById('r-risk-atr');
   if (raEl) {
     if (riskAtr > 0) {
-      const raColor = riskAtr <= 0.5 ? 'var(--green)' : riskAtr <= 1 ? 'var(--amber)' : 'var(--red)';
-      const raLabel = riskAtr <= 0.333 ? 'sehr gut' : riskAtr <= 0.5 ? 'gut' : riskAtr <= 1 ? 'grenzwertig' : 'kein Trade';
+      const raColor = riskAtr >= 2 ? 'var(--green)' : riskAtr >= 1 ? 'var(--amber)' : 'var(--red)';
+      const raLabel = riskAtr >= 3 ? 'sehr gut' : riskAtr >= 2 ? 'gut' : riskAtr >= 1 ? 'grenzwertig' : 'kein Trade';
       raEl.innerHTML = `Risk/ATR: <span style="color:${raColor};font-weight:600">${fmt(riskAtr,2)}</span> <span style="color:${raColor};font-size:11px">(${raLabel})</span>`;
     } else {
       raEl.textContent = atr > 0 ? 'Risk/ATR: — (Stopp fehlt)' : 'ATR% eingeben für Risk/ATR';
@@ -951,7 +952,7 @@ function saveTrade() {
     edge_multi:     edgeMulti,
     atr_pct:        atr,
     risk_atr:       +(riskAtr || 0).toFixed(3),
-    risk_atr_konv:  'risk/atr',
+    risk_atr_konv:  'atr/risk',
     setup_grad:     document.getElementById('c-setup').value,
     theme:          document.getElementById('c-theme').value,
     fomo:           calcState.fomo,
@@ -1018,7 +1019,7 @@ function saveKandidat() {
     risk_share_pct: +riskPct.toFixed(3),
     atr_pct:    atr,
     risk_atr:   +riskAtr.toFixed(3),
-    risk_atr_konv: 'risk/atr',
+    risk_atr_konv: 'atr/risk',
     oneR:       +oneR.toFixed(4),
     edge_count: edgeCount,
     edges,
@@ -1064,27 +1065,27 @@ function initKandidaten() {
   document.getElementById('tab-kandidaten').innerHTML = `
     <div class="section-header">
       <span class="section-title">Trade Kandidaten</span>
-      <span class="text-muted">Risk/ATR = Stopp% ÷ ATR% — kleiner ist besser · ≤0,33 ★★ · ≤0,5 ★ · >1 kein Trade</span>
+      <span class="text-muted">Risk/ATR = ATR% ÷ Stopp% — größer ist besser · Minimum 1 · ≥2 ★ · ≥3 ★★ · &lt;1 kein Trade</span>
     </div>
     <div id="kandidaten-list"></div>`;
   renderKandidaten();
 }
 
-// Liefert risk_atr IMMER in der kanonischen Richtung (Stop/ATR, kleiner = besser).
-// Datensaetze OHNE risk_atr_konv stammen aus der invertierten Rechnung (ATR/Stop)
-// und werden fuer Anzeige und Sortierung umgerechnet — sonst laesen sich alte
-// Kandidaten nach dem Fix als "kein Trade".
+// Liefert risk_atr IMMER in der kanonischen Richtung (ATR/Stop, GROESSER = besser).
+// Nur Datensaetze mit risk_atr_konv === 'risk/atr' stammen aus dem Zwischenstand
+// 13.-15.8.2026 und muessen invertiert werden. Alles andere (inkl. Datensaetze
+// ganz ohne Marker, z.B. AEHR vom 10.8.) steht bereits als ATR/Stop.
 function riskAtrKanonisch(k) {
   const v = k && k.risk_atr;
   if (!v || v <= 0) return 0;
-  return k.risk_atr_konv === 'risk/atr' ? v : +(1 / v).toFixed(3);
+  return k.risk_atr_konv === 'risk/atr' ? +(1 / v).toFixed(3) : v;
 }
 
 function renderKandidaten() {
   const list = document.getElementById('kandidaten-list');
   if (!list) return;
   const all = LS.get(KEY_KANDIDATEN).filter(k => k.status === 'kandidat')
-    .sort((a,b) => (riskAtrKanonisch(a) || 99) - (riskAtrKanonisch(b) || 99)); // beste (= kleinste) zuerst
+    .sort((a,b) => (riskAtrKanonisch(b) || 0) - (riskAtrKanonisch(a) || 0)); // beste (= groesste) zuerst
 
   if (!all.length) {
     list.innerHTML = `<div class="empty-state"><p>Keine Kandidaten — im Rechner "Zu Kandidaten" klicken</p></div>`;
@@ -1114,17 +1115,17 @@ function renderKandidaten() {
           ${all.map(k => {
             const ra = riskAtrKanonisch(k);
             const raColor = !ra ? 'var(--text-muted)'
-              : ra <= 0.5 ? 'var(--green)'
-              : ra <= 1 ? 'var(--amber)'
+              : ra >= 2 ? 'var(--green)'
+              : ra >= 1 ? 'var(--amber)'
               : 'var(--red)';
             const raBg = !ra ? ''
-              : ra <= 0.5 ? 'background:var(--green-dim)'
-              : ra <= 1 ? 'background:var(--amber-dim)'
+              : ra >= 2 ? 'background:var(--green-dim)'
+              : ra >= 1 ? 'background:var(--amber-dim)'
               : 'background:var(--red-dim)';
             const raLabel = !ra ? '—'
-              : ra <= 0.333 ? `${fmt(ra,2)} ★★`
-              : ra <= 0.5 ? `${fmt(ra,2)} ★`
-              : ra <= 1 ? fmt(ra,2)
+              : ra >= 3 ? `${fmt(ra,2)} ★★`
+              : ra >= 2 ? `${fmt(ra,2)} ★`
+              : ra >= 1 ? fmt(ra,2)
               : `${fmt(ra,2)} ✗`;
             return `<tr>
               <td><strong class="text-mono">${k.ticker}</strong>${k.fomo ? ' <span class="badge badge-amber" style="font-size:9px">FOMO</span>' : ''}</td>
@@ -1175,7 +1176,7 @@ function renderKandidaten() {
         // Risk/ATR am TATSAECHLICHEN Kaufkurs neu rechnen — der geplante Wert des
         // Kandidaten gilt nur fuer den geplanten Entry.
         const riskPctAkt = kaufkurs > 0 ? rps / kaufkurs * 100 : 0;
-        const riskAtrAkt = (k.atr_pct > 0 && riskPctAkt > 0) ? +(riskPctAkt / k.atr_pct).toFixed(3) : 0;
+        const riskAtrAkt = (k.atr_pct > 0 && riskPctAkt > 0) ? +(k.atr_pct / riskPctAkt).toFixed(3) : 0;
         const riskEurAkt = +((kaufkurs - k.stopp_hard) * k.aktien).toFixed(2);
         // risk_pct aus dem TATSAECHLICHEN Risiko rechnen, nicht aus der Planung uebernehmen.
         // Sonst stehen sich die beiden Felder widersprechen: bei AXTI 14.8. lag die geplante
@@ -1197,7 +1198,7 @@ function renderKandidaten() {
           edge_count: k.edge_count, setup_grad: k.setup_grad,
           atr_pct: k.atr_pct || 0,
           risk_atr: riskAtrAkt,
-          risk_atr_konv: 'risk/atr',
+          risk_atr_konv: 'atr/risk',
           theme: k.theme, fomo: k.fomo,
           // Trail-Modus aus dem Kandidaten uebernehmen — bis 14.8.2026 fehlte das Feld ganz,
           // weshalb `modus` in Positionen viermal verlorenging und aus den Research-Dateien
