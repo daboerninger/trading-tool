@@ -86,6 +86,9 @@
     .edge-check.checked .check-box svg { display: block; }
     .edge-check span { font-size: 12px; color: var(--text-dim); }
     .edge-check.checked span { color: var(--text); }
+    /* Gruppen-Ueberschriften: Kriterien 1-4 messen die Aktie, 5-7 das Tape (Befund 21.8.2026) */
+    .edge-group-label { grid-column: 1 / -1; font-size: 11px; font-weight: 600; letter-spacing: .04em;
+      text-transform: uppercase; color: var(--text-muted); margin: 4px 0 -2px; }
 
     /* Result panel */
     .result-panel { background: var(--card); border: 1px solid var(--border); border-radius: var(--radius); padding: 20px; position: sticky; top: 0; }
@@ -581,8 +584,19 @@ const EDGE_CRITERIA = [
   'Markt bullish',
 ];
 
-let calcState = { edgeCount: 0, ticker: '', limit: 0, stopp: 0, shares: 0, riskEur: 0,
-  entry: 0, lod: 0, riskPerShare: 0, posSize: 0, oneR: 0, fomo: false, depot: 0, riskStufe: 0.5 };
+// Trennlinie zwischen Aktien- und Tape-Kriterien. Index 0-3 beschreiben die AKTIE,
+// Index 4-6 den MARKT. Reihenfolge darf sich nicht aendern — das gespeicherte
+// `edges`-Array (seit 14.8.2026) haengt an genau diesen Positionen.
+// Hintergrund (21.8.2026): Der Edge-Count trennt in den eigenen Daten nichts — alle 12
+// Sieben-Edge-Trades stammen aus Mai/Juni, im selben Fenster verlor 6/7 zu 100 % bei
+// Ø −0,88R gegen 7/7 mit −0,87R. Ursache ist, dass drei der sieben Kriterien den MARKT
+// messen: ein 7/7 ist nur in einem starken Tape ueberhaupt druckbar. Die Aufteilung macht
+// das sichtbar — "5/7" kann 4+1 (starke Aktie, schwaches Tape) oder 2+3 sein.
+const EDGE_SPLIT = 4;
+
+let calcState = { edgeCount: 0, edgeStock: 0, edgeMarket: 0, ticker: '', limit: 0, stopp: 0, shares: 0, riskEur: 0,
+  entry: 0, lod: 0, riskPerShare: 0, posSize: 0, oneR: 0, fomo: false, depot: 0, riskStufe: 0.5,
+  edgeMulti: 1, multiGrund: '' };
 
 // Gesetzt, solange der Rechner einen BESTEHENDEN Kandidaten bearbeitet (statt einen neuen
 // anzulegen). Der Rechner ist seit 14.8.2026 der einzige Schreibpfad fuer Kandidaten — das
@@ -635,6 +649,8 @@ function initCalc() {
           <div class="card-title">Edge Count (7 Kriterien)</div>
           <div class="edge-grid" id="edge-grid">
             ${EDGE_CRITERIA.map((c,i) => `
+              ${i === 0 ? '<div class="edge-group-label">Die Aktie</div>' : ''}
+              ${i === EDGE_SPLIT ? '<div class="edge-group-label">Das Tape</div>' : ''}
               <label class="edge-check" data-idx="${i}">
                 <input type="checkbox">
                 <div class="check-box"><svg width="10" height="8" viewBox="0 0 10 8" fill="none"><path d="M1 4L3.5 6.5L9 1" stroke="white" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"/></svg></div>
@@ -644,12 +660,21 @@ function initCalc() {
           <div id="edge-recommendation" style="display:none;padding:10px 12px;border-radius:var(--radius-sm);margin-bottom:12px;font-size:13px;line-height:1.4"></div>
           <div class="flex items-center gap-8">
             <span class="text-muted">Edge Count: <strong id="edge-display">0</strong> / 7</span>
+            <span class="text-muted" style="font-size:12px">Aktie <strong id="edge-split-stock">0</strong>/4 · Tape <strong id="edge-split-market">0</strong>/3</span>
             <span class="text-muted" style="margin-left:16px">Multiplikator:</span>
             <select id="c-edge-multi" style="width:auto">
               <option value="0.5">50% (Probier)</option>
               <option value="1" selected>100% (Standard)</option>
-              <option value="1.25">125% (High-Conv.)</option>
+              <option value="1.25">125% (Conviction — Begründung nötig)</option>
             </select>
+          </div>
+          <div id="multi-grund-wrap" style="display:none;margin-top:10px">
+            <input type="text" id="c-multi-grund" class="w-full"
+              placeholder="Warum überwiegt die Überzeugung hier den Standard?">
+            <div class="text-muted" style="font-size:11px;margin-top:4px">
+              125 % folgt nicht mehr aus dem Edge-Count. Wer aufstockt, notiert den Grund
+              <strong>vorher</strong> — sonst gilt der Standard.
+            </div>
           </div>
         </div>
 
@@ -708,7 +733,7 @@ function initCalc() {
   const savedDepot = localStorage.getItem('tt_depot');
   if (savedDepot) document.getElementById('c-depot').value = savedDepot;
 
-  ['c-depot','c-risk','c-entry','c-limit-puffer','c-lod','c-stopp-puffer','c-atr','c-edge-multi'].forEach(id =>
+  ['c-depot','c-risk','c-entry','c-limit-puffer','c-lod','c-stopp-puffer','c-atr','c-edge-multi','c-multi-grund'].forEach(id =>
     document.getElementById(id)?.addEventListener('input', recalc)
   );
 
@@ -725,9 +750,7 @@ function initCalc() {
   document.getElementById('edge-grid').addEventListener('change', e => {
     if (e.target.type !== 'checkbox') return;
     e.target.closest('.edge-check').classList.toggle('checked', e.target.checked);
-    calcState.edgeCount = document.querySelectorAll('#edge-grid input:checked').length;
-    document.getElementById('edge-display').textContent = calcState.edgeCount;
-    updateEdgeRecommendation(calcState.edgeCount);
+    refreshEdgeUi();
     recalc();
   });
 
@@ -738,7 +761,30 @@ function initCalc() {
   applyCalcEditMode();
 }
 
-// Modul-Scope, damit loadKandidatIntoCalc() sie ebenfalls aufrufen kann.
+// Zaehlt die angehakten Kriterien, teilt sie in Aktie/Tape und aktualisiert die Anzeige.
+// Modul-Scope, damit loadKandidatIntoCalc() sie nach dem Setzen der Boxen ebenfalls ruft.
+function refreshEdgeUi() {
+  const boxes = [...document.querySelectorAll('#edge-grid .edge-check')];
+  const checked = boxes.filter(l => l.querySelector('input')?.checked);
+  const stock  = checked.filter(l => +l.dataset.idx <  EDGE_SPLIT).length;
+  const market = checked.filter(l => +l.dataset.idx >= EDGE_SPLIT).length;
+
+  calcState.edgeCount  = checked.length;
+  calcState.edgeStock  = stock;
+  calcState.edgeMarket = market;
+
+  const set = (id, v) => { const el = document.getElementById(id); if (el) el.textContent = v; };
+  set('edge-display', checked.length);
+  set('edge-split-stock', stock);
+  set('edge-split-market', market);
+  updateEdgeRecommendation(checked.length);
+}
+
+// GEAENDERT 21.8.2026: Die 125-%-Stufe wird NICHT mehr aus dem Edge-Count abgeleitet.
+// Begruendung siehe EDGE_SPLIT — der Count trennt in den eigenen Daten nichts, also gibt es
+// keinen Beleg fuer ein Hochskalieren des Risikos. Was bleibt, ist die Schwellen-Funktion:
+// unter 4 Kriterien ist das Setup nicht handelbar, ab 4 gilt der Standard. Hochskalieren auf
+// ein unbewiesenes Signal fuegt Varianz ohne belegten Erwartungswert hinzu.
 function updateEdgeRecommendation(n) {
   const el = document.getElementById('edge-recommendation');
   if (!el) return;
@@ -747,19 +793,19 @@ function updateEdgeRecommendation(n) {
   if (n <= 3) {
     bg = 'var(--amber-dim)'; color = 'var(--amber)';
     title = '50% — Pilot';
-    text  = '· zu viele Fragezeichen';
-  } else if (n <= 5) {
+    text  = '· unter der Schwelle';
+  } else {
     bg = 'var(--accent-dim)'; color = 'var(--accent)';
     title = '100% — Standard';
-    text  = '· solides Setup';
-  } else {
-    bg = 'var(--green-dim)'; color = 'var(--green)';
-    title = '125% — Overweight';
-    text  = '· alles aligned';
+    text  = '· Schwelle erfüllt';
   }
   el.style.display  = 'block';
   el.style.background = bg;
-  el.innerHTML = `<span style="font-weight:600;color:${color}">${title}</span><span style="color:var(--text-dim);margin-left:8px;font-size:12px">${text}</span>`;
+  el.innerHTML = `<span style="font-weight:600;color:${color}">${title}</span>`
+    + `<span style="color:var(--text-dim);margin-left:8px;font-size:12px">${text}</span>`
+    + `<div style="color:var(--text-muted);font-size:11px;margin-top:6px;line-height:1.35">`
+    + `Der Edge-Count ist eine Schwelle, kein Ranking — er sortiert zwei zulässige Setups nicht. `
+    + `Drei der sieben Kriterien messen das Tape. <span style="opacity:.7">(Befund 21.8.2026)</span></div>`;
 }
 
 // Schaltet die Rechner-Oberflaeche zwischen "neuen Kandidaten anlegen" und "bestehenden
@@ -832,10 +878,8 @@ function loadKandidatIntoCalc(k) {
     if (box) box.checked = on;
     lab.classList.toggle('checked', on);
   });
-  calcState.edgeCount = document.querySelectorAll('#edge-grid input:checked').length;
-  const disp = document.getElementById('edge-display');
-  if (disp) disp.textContent = calcState.edgeCount;
-  updateEdgeRecommendation(calcState.edgeCount);
+  refreshEdgeUi();
+  set('c-multi-grund', k.edge_multi_grund || '');
 
   const hint = document.getElementById('calc-edit-hint');
   if (hint) {
@@ -855,6 +899,11 @@ function recalc() {
   const atr         = parseFloat(document.getElementById('c-atr').value) || 0;
   const edgeMulti   = parseFloat(document.getElementById('c-edge-multi').value) || 1;
 
+  // Begruendungsfeld nur zeigen, wenn ueber den Standard hinaus aufgestockt wird.
+  const grundWrap = document.getElementById('multi-grund-wrap');
+  if (grundWrap) grundWrap.style.display = edgeMulti > 1 ? 'block' : 'none';
+  const multiGrund = (document.getElementById('c-multi-grund')?.value || '').trim();
+
   const limit       = entry > 0 ? entry * (1 + limitPuffer / 100) : 0;
   const stopp       = lod > 0   ? lod   * (1 - stoppPuffer / 100) : 0;
   const riskEur     = depot * (riskStufe / 100) * edgeMulti;
@@ -870,6 +919,7 @@ function recalc() {
   if (lod   > 0) document.getElementById('c-stopp').value = stopp.toFixed(2);
 
   Object.assign(calcState, { depot, riskStufe, entry, limitPuffer, lod, stoppPuffer, atr, edgeMulti,
+    multiGrund,
     limit, stopp, riskPerShare, shares, posSize, riskEur, oneR,
     ticker: document.getElementById('c-ticker').value.toUpperCase(),
     fomo: document.getElementById('c-fomo').value === 'true' });
@@ -928,11 +978,12 @@ function recalc() {
 }
 
 function saveTrade() {
-  const { ticker, limit, stopp, shares, riskEur, riskStufe, oneR, edgeCount, edgeMulti, atr, riskAtr } = calcState;
+  const { ticker, limit, stopp, shares, riskEur, riskStufe, oneR, edgeCount, edgeMulti, atr, riskAtr, multiGrund } = calcState;
   if (!ticker)    return showToast('Ticker fehlt', 'error');
   if (!(limit > 0)) return showToast('Entry/Limit fehlt', 'error');
   if (!(stopp > 0)) return showToast('Stopp fehlt', 'error');
   if (!(shares > 0)) return showToast('0 Aktien — Depot/Risk prüfen', 'error');
+  if (edgeMulti > 1 && !multiGrund) return showToast('125 % braucht eine Begründung — vorher, nicht nachher', 'error');
 
   const rps = limit - stopp;
   const pos = {
@@ -950,6 +1001,7 @@ function saveTrade() {
     risk_eur:       +riskEur.toFixed(2),
     edge_count:     edgeCount,
     edge_multi:     edgeMulti,
+    edge_multi_grund: multiGrund,
     atr_pct:        atr,
     risk_atr:       +(riskAtr || 0).toFixed(3),
     risk_atr_konv:  'atr/risk',
@@ -997,10 +1049,11 @@ function savePass() {
 }
 
 function saveKandidat() {
-  const { ticker, limit, stopp, shares, riskEur, riskStufe, oneR, edgeCount, atr, riskPct, riskAtr } = calcState;
+  const { ticker, limit, stopp, shares, riskEur, riskStufe, oneR, edgeCount, atr, riskPct, riskAtr, multiGrund } = calcState;
   if (!ticker)      return showToast('Ticker fehlt', 'error');
   if (!(limit > 0)) return showToast('Entry/Limit fehlt', 'error');
   if (!(stopp > 0)) return showToast('Stopp fehlt', 'error');
+  if (calcState.edgeMulti > 1 && !multiGrund) return showToast('125 % braucht eine Begründung — vorher, nicht nachher', 'error');
 
   // Seit 14.8.2026 mitgespeichert, damit sich der Rechner-Zustand spaeter EXAKT
   // rekonstruieren laesst: welche Edges angehakt waren, beide Puffer, der Multiplikator.
@@ -1026,6 +1079,7 @@ function saveKandidat() {
     limit_puffer: calcState.limitPuffer,
     stopp_puffer: calcState.stoppPuffer,
     edge_multi:   calcState.edgeMulti,
+    edge_multi_grund: multiGrund,
     setup_grad: document.getElementById('c-setup').value,
     theme:      document.getElementById('c-theme').value,
     modus:      document.getElementById('c-modus')?.value || '',
@@ -1196,6 +1250,10 @@ function renderKandidaten() {
           risk_pct_geplant: k.risk_pct,
           risk_eur: riskEurAkt,
           edge_count: k.edge_count, setup_grad: k.setup_grad,
+          // Multiplikator und seine Begruendung mituebernehmen — sonst ginge die schriftliche
+          // Vorab-Begruendung beim Erfassen verloren, genau wie es `modus` bis 14.8.2026 passiert ist.
+          edge_multi: k.edge_multi ?? 1,
+          edge_multi_grund: k.edge_multi_grund || '',
           atr_pct: k.atr_pct || 0,
           risk_atr: riskAtrAkt,
           risk_atr_konv: 'atr/risk',
