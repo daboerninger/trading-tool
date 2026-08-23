@@ -681,12 +681,48 @@ function initCalc() {
         <div class="card calc-section">
           <div class="card-title">Setup Details</div>
           <div class="grid-3">
-            <div class="field"><label>Setup-Grad</label>
+            <div class="field"><label>Setup-Grad — <strong>deine</strong> Einschätzung</label>
               <select id="c-setup"><option value="A">A — Top Setup</option><option value="B" selected>B — Standard</option><option value="C">C — Spekulativ</option></select>
             </div>
             <div class="field"><label>Theme</label><input type="text" id="c-theme" placeholder="z.B. AI, Energy..."></div>
             <div class="field"><label>FOMO?</label>
               <select id="c-fomo"><option value="false" selected>Nein</option><option value="true">Ja</option></select>
+            </div>
+          </div>
+          <div class="grid-2 mt-12">
+            <div class="field"><label>OBV-Verlauf</label>
+              <select id="c-obv">
+                <option value="" selected>— nicht geprüft</option>
+                <option value="steigend">steigend</option>
+                <option value="flach">flach</option>
+                <option value="fallend">fallend</option>
+              </select>
+            </div>
+            <div class="field"><label>Sales / Earnings</label>
+              <select id="c-fund">
+                <option value="" selected>— nicht geprüft</option>
+                <option value="beschleunigt">beschleunigt</option>
+                <option value="flach">flach</option>
+                <option value="ruecklaeufig">rückläufig</option>
+              </select>
+            </div>
+          </div>
+          <div class="field mt-12"><label>Setup-Notiz — worauf stützt sich <strong>deine</strong> Einschätzung?</label>
+            <textarea id="c-setup-notiz" rows="2" placeholder="z.B. VCP zweite Kontraktion halb so tief wie die erste, OBV neues Hoch vor dem Preis, Peers ohne eigene Zahlen mitgelaufen..."></textarea>
+          </div>
+          <div class="grid-3 mt-12" style="border-top:1px solid var(--border);padding-top:12px">
+            <div class="field"><label>Claude-Vorschlag</label>
+              <select id="c-setup-claude">
+                <option value="" selected>—</option><option value="A">A</option><option value="B">B</option><option value="C">C</option>
+              </select>
+            </div>
+            <div class="field"><label>davon Basis (vor Regime-Abzug)</label>
+              <select id="c-setup-basis">
+                <option value="" selected>—</option><option value="A">A</option><option value="B">B</option><option value="C">C</option>
+              </select>
+            </div>
+            <div class="field"><label>Regime-Abzug angewandt?</label>
+              <select id="c-regime-abzug"><option value="false" selected>Nein</option><option value="true">Ja</option></select>
             </div>
           </div>
           <div class="grid-2 mt-12">
@@ -849,6 +885,12 @@ function loadKandidatIntoCalc(k) {
   set('c-atr',   k.atr_pct || '');
   set('c-theme', k.theme || '');
   set('c-setup', k.setup_grad || 'B');
+  set('c-obv',   k.obv_verlauf || '');
+  set('c-fund',  k.fundamentals || '');
+  set('c-setup-notiz',   k.setup_notiz || '');
+  set('c-setup-claude',  k.setup_grad_claude || '');
+  set('c-setup-basis',   k.setup_grad_basis || '');
+  set('c-regime-abzug',  k.regime_abzug ? 'true' : 'false');
   set('c-fomo',  k.fomo ? 'true' : 'false');
   set('c-modus', k.modus || '');
 
@@ -986,6 +1028,10 @@ function saveTrade() {
   if (edgeMulti > 1 && !multiGrund) return showToast('125 % braucht eine Begründung — vorher, nicht nachher', 'error');
 
   const rps = limit - stopp;
+  // 23.8.2026: `edges` wurde bisher NUR am Kandidaten gespeichert und ging beim
+  // Uebergang in die Position verloren — genau wie `modus` bis zum 14.8.2026.
+  // Dadurch hatte KEIN einziger der 28 geschlossenen Trades die Einzel-Edges.
+  const edges = [...document.querySelectorAll('#edge-grid .edge-check input')].map(b => b.checked);
   const pos = {
     id:             genId(),
     ticker,
@@ -1008,6 +1054,13 @@ function saveTrade() {
     setup_grad:     document.getElementById('c-setup').value,
     theme:          document.getElementById('c-theme').value,
     fomo:           calcState.fomo,
+    edges,
+    obv_verlauf:       document.getElementById('c-obv')?.value || '',
+    fundamentals:      document.getElementById('c-fund')?.value || '',
+    setup_notiz:       document.getElementById('c-setup-notiz')?.value || '',
+    setup_grad_claude: document.getElementById('c-setup-claude')?.value || '',
+    setup_grad_basis:  document.getElementById('c-setup-basis')?.value || '',
+    regime_abzug:      document.getElementById('c-regime-abzug')?.value === 'true',
     oneR:           +oneR.toFixed(4),
     teilverkäufe:   [],
     status:         'offen',
@@ -1084,6 +1137,12 @@ function saveKandidat() {
     theme:      document.getElementById('c-theme').value,
     modus:      document.getElementById('c-modus')?.value || '',
     fomo:       calcState.fomo,
+    obv_verlauf:       document.getElementById('c-obv')?.value || '',
+    fundamentals:      document.getElementById('c-fund')?.value || '',
+    setup_notiz:       document.getElementById('c-setup-notiz')?.value || '',
+    setup_grad_claude: document.getElementById('c-setup-claude')?.value || '',
+    setup_grad_basis:  document.getElementById('c-setup-basis')?.value || '',
+    regime_abzug:      document.getElementById('c-regime-abzug')?.value === 'true',
   };
 
   const all = LS.get(KEY_KANDIDATEN);
@@ -1250,6 +1309,15 @@ function renderKandidaten() {
           risk_pct_geplant: k.risk_pct,
           risk_eur: riskEurAkt,
           edge_count: k.edge_count, setup_grad: k.setup_grad,
+          // 23.8.2026 ergaenzt: ohne diese Zeilen bleibt die Auswertung je Edge
+          // und der Vergleich Claude-vs-Daniel dauerhaft leer.
+          edges: Array.isArray(k.edges) ? k.edges : null,
+          obv_verlauf: k.obv_verlauf || '',
+          fundamentals: k.fundamentals || '',
+          setup_notiz: k.setup_notiz || '',
+          setup_grad_claude: k.setup_grad_claude || '',
+          setup_grad_basis: k.setup_grad_basis || '',
+          regime_abzug: !!k.regime_abzug,
           // Multiplikator und seine Begruendung mituebernehmen — sonst ginge die schriftliche
           // Vorab-Begruendung beim Erfassen verloren, genau wie es `modus` bis 14.8.2026 passiert ist.
           edge_multi: k.edge_multi ?? 1,
@@ -2029,6 +2097,63 @@ function renderStats() {
           ${avg>=0?'+':''}${avg.toFixed(2)}R</span>
       </div>`;
     }).join('') || '<p class="text-muted">Noch keine Daten</p>';
+
+  // ── Claude vs. Daniel ────────────────────────────────────────────────
+  // Auswertbar sind Uebereinstimmungsrate und Override-Erfolg. NICHT "wer ist
+  // treffsicherer": Daniel liest den Claude-Vorschlag, bevor er seinen setzt —
+  // die Bewertungen sind also nicht unabhaengig (Anker), das waere ein Trugschluss.
+  const RANK = {A:3, B:2, C:1};
+  const paar = trades.filter(t => RANK[t.setup_grad] && RANK[t.setup_grad_claude]);
+  let cvd = '';
+  if (paar.length) {
+    const gleich  = paar.filter(t => t.setup_grad === t.setup_grad_claude);
+    const hoeher  = paar.filter(t => RANK[t.setup_grad] >  RANK[t.setup_grad_claude]);
+    const tiefer  = paar.filter(t => RANK[t.setup_grad] <  RANK[t.setup_grad_claude]);
+    const avg = a => a.length ? a.reduce((s,t)=>s+(t.pnl_r||0),0)/a.length : null;
+    const zeile = (label, arr) => {
+      const a = avg(arr); if (a === null) return '';
+      return `<div style="display:flex;justify-content:space-between;padding:5px 0;font-size:12px">
+        <span class="text-muted">${label} · ${arr.length}</span>
+        <span style="font-family:'DM Mono',monospace;color:${a>=0?'var(--green)':'var(--red)'}">${a>=0?'+':''}${a.toFixed(2)}R</span></div>`;
+    };
+    cvd = `<div style="margin-top:14px;border-top:1px solid var(--border);padding-top:10px">
+      <div style="font-size:11px;letter-spacing:.06em;text-transform:uppercase;color:var(--text-dim);margin-bottom:6px">
+        Claude vs. du · Übereinstimmung ${(gleich.length/paar.length*100).toFixed(0)} % (${gleich.length}/${paar.length})</div>
+      ${zeile('einig', gleich)}${zeile('du besser bewertet', hoeher)}${zeile('du schlechter bewertet', tiefer)}
+      ${paar.length < 15 ? '<div style="font-size:11px;color:var(--text-dim);margin-top:6px">⚠️ unter 15 Paaren ist das Anschauung, keine Statistik</div>' : ''}
+    </div>`;
+  } else {
+    cvd = `<div style="margin-top:14px;border-top:1px solid var(--border);padding-top:10px;font-size:12px" class="text-muted">
+      Claude vs. du — noch kein Trade mit beiden Bewertungen</div>`;
+  }
+
+  // ── Trefferquote je einzelnem Edge ───────────────────────────────────
+  const mitEdges = trades.filter(t => Array.isArray(t.edges) && t.edges.length === EDGE_CRITERIA.length);
+  let ee = '';
+  if (mitEdges.length) {
+    ee = EDGE_CRITERIA.map((name, i) => {
+      const ja = mitEdges.filter(t => t.edges[i]), nein = mitEdges.filter(t => !t.edges[i]);
+      const m = a => a.length ? (a.reduce((s,t)=>s+(t.pnl_r||0),0)/a.length) : null;
+      const aJa = m(ja), aNein = m(nein);
+      const fmt = v => v === null ? '<span class="text-muted">—</span>'
+        : `<span style="font-family:'DM Mono',monospace;color:${v>=0?'var(--green)':'var(--red)'}">${v>=0?'+':''}${v.toFixed(2)}R</span>`;
+      return `<div style="display:flex;justify-content:space-between;gap:8px;padding:4px 0;font-size:12px">
+        <span class="text-muted" style="flex:1">${i+1}. ${name}</span>
+        <span style="width:78px;text-align:right">${fmt(aJa)} <span class="text-muted">(${ja.length})</span></span>
+        <span style="width:78px;text-align:right">${fmt(aNein)} <span class="text-muted">(${nein.length})</span></span>
+      </div>`;
+    }).join('');
+    ee = `<div style="margin-top:14px;border-top:1px solid var(--border);padding-top:10px">
+      <div style="font-size:11px;letter-spacing:.06em;text-transform:uppercase;color:var(--text-dim);margin-bottom:6px">
+        Ø R je Edge · erfüllt / nicht erfüllt · N=${mitEdges.length}</div>${ee}
+      ${mitEdges.length < 20 ? '<div style="font-size:11px;color:var(--text-dim);margin-top:6px">⚠️ unter 20 Trades ist das eine Rückschau-Checkliste, keine Signifikanz</div>' : ''}
+    </div>`;
+  } else {
+    ee = `<div style="margin-top:14px;border-top:1px solid var(--border);padding-top:10px;font-size:12px" class="text-muted">
+      Je Edge — noch kein geschlossener Trade mit gespeicherter Edge-Auswahl.<br>
+      <span style="font-size:11px">Die Einzel-Edges gibt es am Kandidaten seit 14.8.2026, sie gingen bis 23.8.2026 beim Übergang in die Position verloren.</span></div>`;
+  }
+  document.getElementById('setup-analysis').innerHTML += cvd + ee;
 
   renderMonthlyReview(trades);
   renderHyperWindows(trades);
