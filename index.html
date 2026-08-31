@@ -2003,9 +2003,19 @@ function initStats() {
       <div class="card"><div class="card-title">Setup-Analyse</div><div id="setup-analysis"></div></div>
     </div>
 
+    <div class="chart-card"><div class="card-title" style="margin-bottom:4px">R-Verteilung &nbsp;·&nbsp; Form des Edges</div>
+      <div class="text-muted" style="font-size:11px;margin-bottom:12px">Wie viele Trades landen in welcher Ergebnis-Klasse — zeigt, ob die Verluste sauber bei −1R sitzen und ob genug große Gewinner die Rechnung tragen</div>
+      <canvas id="chart-r-dist"></canvas><div id="r-dist-note" class="text-muted" style="font-size:11px;margin-top:10px"></div></div>
+
     <hr class="divider" style="margin:24px 0">
     <div class="section-header"><span class="section-title">Monats-Review (Jeff Sun)</span></div>
-    <div class="card journal-table-wrap"><div class="card-title">Monatsverlauf</div><div id="monthly-table"></div></div>
+    <div class="chart-card"><div class="card-title" style="margin-bottom:4px">Aktivität pro Monat &nbsp;·&nbsp; nach Kaufdatum</div>
+      <div class="text-muted" style="font-size:11px;margin-bottom:12px">Wie oft wurde abgedrückt — gestapelt nach Ausgang</div>
+      <canvas id="chart-monthly-count"></canvas></div>
+    <div class="chart-card"><div class="card-title" style="margin-bottom:4px">Ergebnis pro Monat &nbsp;·&nbsp; nach Kaufdatum</div>
+      <div class="text-muted" style="font-size:11px;margin-bottom:12px">Summe der gewonnenen R über null, Summe der verlorenen R darunter — gleiche Monatsachse wie oben</div>
+      <canvas id="chart-monthly-r"></canvas><div id="monthly-r-note" class="text-muted" style="font-size:11px;margin-top:10px"></div></div>
+    <div class="card journal-table-wrap mt-16"><div class="card-title">Monatsverlauf</div><div id="monthly-table"></div></div>
     <div class="card mt-16"><div class="card-title">Hyper-Active-Windows &nbsp;·&nbsp; ≥3 Entries in ≤3 Tagen</div><div id="hyper-windows"></div></div>`;
 
   document.getElementById('btn-refresh-stats').addEventListener('click', renderStats);
@@ -2155,26 +2165,186 @@ function renderStats() {
   }
   document.getElementById('setup-analysis').innerHTML += cvd + ee;
 
+  renderRDistribution(trades);
+  renderMonthlyCharts(trades);
   renderMonthlyReview(trades);
   renderHyperWindows(trades);
 }
 
 // ─── Jeff Sun: Monats-Verlauf (PF, Ø R-Verlust, Max R-Verlust, Verluststrecke) ───
+// ─── Chart-Konstanten (Palette gegen die dunkle Kartenfläche validiert) ───
+const CH = {
+  win:  '#059669',   // Gewinner
+  loss: '#EF4444',   // Verlierer
+  surf: '#1C2130',   // --card, dient als 2px-Trennspalt zwischen Segmenten
+  grid: '#2E3650',
+  tick: '#7A8BA8',
+  font: { family: 'DM Mono', size: 10 }
+};
+
+// Direkt-Label über/unter dem Balken — zweite Kodierung neben der Farbe
+const valueLabels = {
+  id: 'valueLabels',
+  afterDatasetsDraw(chart, args, opts) {
+    const fn = opts && opts.formatter; if (!fn) return;
+    const { ctx } = chart;
+    ctx.save();
+    ctx.font = '600 10px "DM Mono", monospace';
+    ctx.textAlign = 'center';
+    chart.data.labels.forEach((_, i) => {
+      const txt = fn(i); if (txt == null) return;
+      let top = Infinity, bottom = -Infinity;
+      chart.data.datasets.forEach((_, di) => {
+        const m = chart.getDatasetMeta(di).data[i]; if (!m) return;
+        // bei negativen Balken ist m.y die Basislinie — beide Kanten prüfen
+        const lo = Math.min(m.y, m.base ?? m.y), hi = Math.max(m.y, m.base ?? m.y);
+        top = Math.min(top, lo); bottom = Math.max(bottom, hi);
+      });
+      if (!isFinite(top)) return;
+      const neg = String(txt).startsWith('−') || String(txt).startsWith('-');
+      ctx.fillStyle = neg ? CH.loss : (String(txt).startsWith('+') ? CH.win : '#A0ADBF');
+      const x = chart.getDatasetMeta(0).data[i].x;
+      if (neg) ctx.fillText(txt, x, bottom + 14); else ctx.fillText(txt, x, top - 6);
+    });
+    ctx.restore();
+  }
+};
+
+function makeChart(id, cfg) {
+  const c = document.getElementById(id); if (!c) return null;
+  if (c._chart) c._chart.destroy();
+  c._chart = new Chart(c.getContext('2d'), cfg);
+  return c._chart;
+}
+const axisBase = (stacked, fmtY) => ({
+  x: { stacked, ticks: { color: CH.tick, font: CH.font }, grid: { display: false } },
+  y: { stacked, ticks: { color: CH.tick, font: CH.font, callback: fmtY }, grid: { color: CH.grid } }
+});
+const legendBase = { display: true, position: 'bottom',
+  labels: { color: '#A0ADBF', font: { family: 'DM Mono', size: 10 }, boxWidth: 10, boxHeight: 10, padding: 14 } };
+
+// ─── Aktivität + Ergebnis pro Monat (beide nach KAUFDATUM) ───
+function renderMonthlyCharts(trades) {
+  const byMonth = {};
+  trades.filter(t => t.kaufdatum).forEach(t => {
+    (byMonth[monthKey(t.kaufdatum)] = byMonth[monthKey(t.kaufdatum)] || []).push(t);
+  });
+  const months = Object.keys(byMonth).sort();
+  if (!months.length) return;
+
+  const labels  = months.map(monthLabel);
+  const nWin    = months.map(k => byMonth[k].filter(t => (t.pnl_r||0) > 0).length);
+  const nLoss   = months.map(k => byMonth[k].filter(t => (t.pnl_r||0) <= 0).length);
+  const rWin    = months.map(k => +byMonth[k].filter(t => (t.pnl_r||0) > 0).reduce((s,t)=>s+t.pnl_r,0).toFixed(2));
+  const rLoss   = months.map(k => +byMonth[k].filter(t => (t.pnl_r||0) < 0).reduce((s,t)=>s+t.pnl_r,0).toFixed(2));
+  const best    = months.map(k => byMonth[k].reduce((b,t) => (t.pnl_r||0) > (b.pnl_r||0) ? t : b, byMonth[k][0]));
+
+  const seg = { borderColor: CH.surf, borderWidth: 2, borderRadius: 4, borderSkipped: false };
+
+  makeChart('chart-monthly-count', {
+    type: 'bar',
+    data: { labels, datasets: [
+      { label: 'Gewinner', data: nWin,  backgroundColor: CH.win,  ...seg },
+      { label: 'Verlierer', data: nLoss, backgroundColor: CH.loss, ...seg } ] },
+    options: { responsive: true, plugins: {
+        legend: legendBase,
+        valueLabels: { formatter: i => String(nWin[i] + nLoss[i]) },
+        tooltip: { callbacks: {
+          title: c => labels[c[0].dataIndex],
+          afterBody: c => { const i = c[0].dataIndex;
+            return `gesamt ${nWin[i]+nLoss[i]} Trades · Trefferquote ${Math.round(nWin[i]/(nWin[i]+nLoss[i])*100)} %`; } } } },
+      scales: axisBase(true, v => v) },
+    plugins: [valueLabels]
+  });
+
+  makeChart('chart-monthly-r', {
+    type: 'bar',
+    data: { labels, datasets: [
+      { label: 'gewonnene R', data: rWin,  backgroundColor: CH.win,  ...seg },
+      { label: 'verlorene R', data: rLoss, backgroundColor: CH.loss, ...seg } ] },
+    options: { responsive: true, plugins: {
+        legend: legendBase,
+        valueLabels: { formatter: i => { const n = rWin[i] + rLoss[i];
+          return (n >= 0 ? '+' : '−') + Math.abs(n).toFixed(1).replace('.', ',') + 'R'; } },
+        tooltip: { callbacks: {
+          title: c => labels[c[0].dataIndex],
+          afterBody: c => { const i = c[0].dataIndex; const b = best[i];
+            return `Netto ${(rWin[i]+rLoss[i]).toFixed(2).replace('.', ',')}R\ngrößter Einzeltrade: ${b.ticker} ${(b.pnl_r||0).toFixed(2).replace('.', ',')}R`; } } } },
+      scales: axisBase(true, v => (v > 0 ? '+' : '') + String(v).replace('.', ',') + 'R') },
+    plugins: [valueLabels]
+  });
+
+  // Konzentrations-Hinweis: dominiert ein einzelner Trade die Gewinnseite?
+  const note = document.getElementById('monthly-r-note');
+  if (note) {
+    const wins = trades.filter(t => (t.pnl_r||0) > 0).sort((a,b) => b.pnl_r - a.pnl_r);
+    const sum  = wins.reduce((s,t) => s+t.pnl_r, 0);
+    if (wins.length && sum > 0) {
+      const share = wins[0].pnl_r / sum * 100;
+      const mk = monthLabel(monthKey(wins[0].kaufdatum));
+      note.innerHTML = share >= 40
+        ? `⚠️ <strong>${wins[0].ticker}</strong> allein trägt <strong>${share.toFixed(0)} %</strong> aller gewonnenen R (${wins[0].pnl_r.toFixed(2).replace('.', ',')}R von ${sum.toFixed(2).replace('.', ',')}R). Der grüne Balken im ${mk} beschreibt im Wesentlichen diesen einen Trade — nicht den Monat.`
+        : `Größter Gewinner: ${wins[0].ticker} ${wins[0].pnl_r.toFixed(2).replace('.', ',')}R = ${share.toFixed(0)} % aller gewonnenen R.`;
+    }
+  }
+}
+
+// ─── R-Verteilung: Form des Edges ───
+function renderRDistribution(trades) {
+  const buckets = [
+    { lab: '≤ −1,5R',  neg: true,  hit: r => r <= -1.5 },
+    { lab: '−1,5…−1R', neg: true,  hit: r => r > -1.5 && r <= -1 },
+    { lab: '−1…−0,5R', neg: true,  hit: r => r > -1 && r <= -0.5 },
+    { lab: '−0,5…0R',  neg: true,  hit: r => r > -0.5 && r <= 0 },
+    { lab: '0…+1R',    neg: false, hit: r => r > 0 && r <= 1 },
+    { lab: '+1…+2R',   neg: false, hit: r => r > 1 && r <= 2 },
+    { lab: '+2…+5R',   neg: false, hit: r => r > 2 && r <= 5 },
+    { lab: '> +5R',    neg: false, hit: r => r > 5 }
+  ];
+  const rs = trades.map(t => t.pnl_r || 0);
+  const counts = buckets.map(b => rs.filter(b.hit).length);
+  const cols   = buckets.map(b => b.neg ? CH.loss : CH.win);
+
+  makeChart('chart-r-dist', {
+    type: 'bar',
+    data: { labels: buckets.map(b => b.lab),
+      datasets: [{ label: 'Trades', data: counts, backgroundColor: cols,
+        borderColor: CH.surf, borderWidth: 2, borderRadius: 4, borderSkipped: false }] },
+    options: { responsive: true, plugins: {
+        legend: { display: false },
+        valueLabels: { formatter: i => counts[i] ? String(counts[i]) : null },
+        tooltip: { callbacks: { label: c => `${c.raw} Trades · ${(c.raw/rs.length*100).toFixed(0)} %` } } },
+      scales: axisBase(false, v => v) },
+    plugins: [valueLabels]
+  });
+
+  const note = document.getElementById('r-dist-note');
+  if (note && rs.length) {
+    const stopBand = rs.filter(r => r > -1.5 && r <= -0.5).length;
+    const big      = rs.filter(r => r > 2).length;
+    const overrun  = rs.filter(r => r <= -1.5).length;
+    note.innerHTML = `${rs.length} Trades · <strong>${stopBand}</strong> im Stopp-Band (−1,5 bis −0,5R) = ${(stopBand/rs.length*100).toFixed(0)} % `
+      + `· <strong>${big}</strong> über +2R = ${(big/rs.length*100).toFixed(0)} %`
+      + (overrun ? ` · <span style="color:var(--red)">${overrun} Stop-Overrun (≤ −1,5R)</span>` : '');
+  }
+}
+
 function renderMonthlyReview(trades) {
   const el = document.getElementById('monthly-table');
   if (!el) return;
 
-  // Outcome-Metriken nach exit_datum-Monat
+  // Outcome-Metriken nach kaufdatum-Monat (auf Kaufdatum vereinheitlicht 29.8.2026 —
+  // gleiche Gruppierung wie die beiden Monats-Charts und der Hyper-Active-Detektor)
   const byMonth = {};
-  trades.filter(t => t.exit_datum).forEach(t => {
-    const k = monthKey(t.exit_datum);
+  trades.filter(t => t.kaufdatum).forEach(t => {
+    const k = monthKey(t.kaufdatum);
     (byMonth[k] = byMonth[k] || []).push(t);
   });
   const months = Object.keys(byMonth).sort();   // chronologisch aufsteigend
   if (!months.length) { el.innerHTML = '<p class="text-muted">Noch keine abgeschlossenen Trades</p>'; return; }
 
   const stats = months.map(k => {
-    const ts   = byMonth[k].slice().sort((a,b) => new Date(a.exit_datum) - new Date(b.exit_datum));
+    const ts   = byMonth[k].slice().sort((a,b) => new Date(a.kaufdatum) - new Date(b.kaufdatum));
     const rs   = ts.map(t => t.pnl_r || 0);
     const wins = rs.filter(r => r > 0).length;
     const gain = rs.filter(r => r > 0).reduce((s,r) => s+r, 0);
@@ -2225,7 +2395,7 @@ function renderMonthlyReview(trades) {
     <tbody>${rows}</tbody>
   </table>
   <p class="text-muted" style="margin-top:10px">
-    PF = Σ Gewinn-R / |Σ Verlust-R| (≥1 profitabel) · rote Max-R-Verluste = &lt;-1R (mehr verloren als geplant) · Pfeil = Trend vs. Vormonat
+    Gruppierung nach <strong>Kaufdatum</strong> · PF = Σ Gewinn-R / |Σ Verlust-R| (≥1 profitabel) · rote Max-R-Verluste = &lt;-1R (mehr verloren als geplant) · Pfeil = Trend vs. Vormonat
   </p>`;
 }
 
