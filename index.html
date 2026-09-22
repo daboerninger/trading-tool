@@ -499,6 +499,31 @@ function fmtDate(s) {
   return d.toLocaleDateString('de-DE', { day: '2-digit', month: '2-digit', year: '2-digit' });
 }
 
+// US-Börsenfeiertage (NYSE/Nasdaq). Bei Bedarf jährlich ergänzen.
+const MARKET_HOLIDAYS = new Set([
+  '2026-01-01','2026-01-19','2026-02-16','2026-04-03','2026-05-25','2026-06-19',
+  '2026-07-03','2026-09-07','2026-11-26','2026-12-25',
+  '2027-01-01','2027-01-18','2027-02-15','2027-03-26','2027-05-31','2027-06-18',
+  '2027-07-05','2027-09-06','2027-11-25','2027-12-24'
+]);
+
+// Haltedauer in HANDELSTAGEN, nicht Kalendertagen (trading_rules.json →
+// daniels_trail_framework: "Trading-Tage zaehlen, nicht Kalendertage").
+// Entry- und Exit-Tag am selben Tag = 0. Freitag → Montag = 1.
+function tradingDaysBetween(fromStr, toStr) {
+  if (!fromStr || !toStr) return null;
+  const d = new Date(String(fromStr).slice(0, 10) + 'T00:00:00Z');
+  const end = new Date(String(toStr).slice(0, 10) + 'T00:00:00Z');
+  if (isNaN(d) || isNaN(end)) return null;
+  let n = 0;
+  while (d < end) {
+    d.setUTCDate(d.getUTCDate() + 1);
+    const iso = d.toISOString().slice(0, 10);
+    if (d.getUTCDay() !== 0 && d.getUTCDay() !== 6 && !MARKET_HOLIDAYS.has(iso)) n++;
+  }
+  return n;
+}
+
 function monthKey(s)   { return s ? s.slice(0, 7) : null; }          // 'YYYY-MM'
 function monthLabel(k) {
   const [y, m] = k.split('-');
@@ -1613,9 +1638,7 @@ function renderPositions() {
                           : pos.oneR > pos.entry ? pos.oneR - pos.entry : 0;
         const pnlAbs  = +(((exitKurs - pos.entry) * pos.aktien).toFixed(2));
         const pnlR    = rps > 0 ? +(pnlAbs / (rps * pos.aktien)).toFixed(3) : 0;
-        const kaufD   = new Date(pos.kaufdatum);
-        const exitD   = new Date(exitDatum);
-        const hold    = Math.round((exitD - kaufD) / 86400000);
+        const hold    = tradingDaysBetween(pos.kaufdatum, exitDatum);
 
         const trade = { ...pos, exit_datum: exitDatum, exit_kurs: exitKurs, exit_grund: exitGrund,
           pnl_abs: pnlAbs, pnl_r: pnlR, haltedauer: hold, lernpunkt, status: 'closed' };
@@ -1825,7 +1848,7 @@ function renderJournalTrades() {
           {k:'ticker',t:'str',label:'Ticker'},
           {k:'kaufdatum',t:'date',label:'Kauf'},
           {k:'exit_datum',t:'date',label:'Exit'},
-          {k:'haltedauer',t:'num',label:'Tage'},
+          {k:'haltedauer',t:'num',label:'Handelstage'},
           {k:'entry',t:'num',label:'Entry'},
           {k:'exit_kurs',t:'num',label:'Exit-Kurs'},
           {k:'aktien',t:'num',label:'Aktien'},
@@ -1844,7 +1867,7 @@ function renderJournalTrades() {
             <td><strong class="text-mono">${t.ticker}</strong></td>
             <td>${fmtDate(t.kaufdatum)}</td>
             <td>${fmtDate(t.exit_datum)}</td>
-            <td class="text-muted">${t.haltedauer != null ? t.haltedauer+'d' : '—'}</td>
+            <td class="text-muted">${t.haltedauer != null ? t.haltedauer+' HT' : '—'}</td>
             <td class="mono">${fmt(t.entry)} €</td>
             <td class="mono">${fmt(t.exit_kurs)} €</td>
             <td class="mono">${t.aktien}</td>
@@ -1994,7 +2017,7 @@ function initStats() {
     <div class="stats-grid">
       <div class="stat-card"><div class="stat-label">Win Rate</div><div class="stat-value" id="kpi-wr">—</div></div>
       <div class="stat-card"><div class="stat-label">Ø R/R</div><div class="stat-value" id="kpi-rr">—</div></div>
-      <div class="stat-card"><div class="stat-label">Ø Haltedauer</div><div class="stat-value" id="kpi-hold">—</div></div>
+      <div class="stat-card"><div class="stat-label">Ø Haltedauer (HT)</div><div class="stat-value" id="kpi-hold">—</div></div>
       <div class="stat-card"><div class="stat-label">Trades gesamt</div><div class="stat-value" id="kpi-total">—</div></div>
     </div>
     <div class="chart-card"><div class="card-title" style="margin-bottom:12px">Equity Curve (kumuliertes R)</div><canvas id="chart-equity"></canvas></div>
@@ -2043,7 +2066,7 @@ function renderStats() {
   rrEl.textContent = (parseFloat(avgRR)>=0?'+':'')+avgRR+'R';
   rrEl.className = 'stat-value ' + (parseFloat(avgRR) >= 0 ? 'green' : 'red');
 
-  document.getElementById('kpi-hold').textContent = avgH != null ? avgH+'d' : '—';
+  document.getElementById('kpi-hold').textContent = avgH != null ? avgH+' HT' : '—';
 
   // Trades chronologisch nach Exit-Datum (realisiertes R) — Fallback Kaufdatum
   const chrono = [...trades].sort((a,b) =>
