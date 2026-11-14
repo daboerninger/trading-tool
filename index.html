@@ -667,6 +667,7 @@ function initCalc() {
           </div>
           <div class="grid-2 mt-12">
             <div class="field"><label>ATR% (optional)</label><input type="number" id="c-atr" placeholder="2.5" step="0.1"></div>
+            <div class="field"><label>Avg $ Vol 20d (Mio. $, optional)</label><input type="number" id="c-dvol" placeholder="250" step="0.01" min="0"></div>
           </div>
         </div>
 
@@ -908,6 +909,7 @@ function loadKandidatIntoCalc(k) {
   set('c-entry', k.entry_trigger ?? '');
   set('c-lod',   k.lod ?? '');
   set('c-atr',   k.atr_pct || '');
+  set('c-dvol',  k.dollar_vol_m ?? '');
   set('c-theme', k.theme || '');
   set('c-setup', k.setup_grad || 'B');
   set('c-obv',   k.obv_verlauf || '');
@@ -1044,6 +1046,13 @@ function recalc() {
     </div>`).join('');
 }
 
+// Ø Dollar-Volumen 20d in Mio. $ (seit 14.11.2026). Leer = null, nicht 0 —
+// 0 waere ein Messwert, null heisst "nicht erfasst".
+function readDollarVol() {
+  const v = parseFloat(document.getElementById('c-dvol')?.value);
+  return v > 0 ? +v.toFixed(2) : null;
+}
+
 function saveTrade() {
   const { ticker, limit, stopp, shares, riskEur, riskStufe, oneR, edgeCount, edgeMulti, atr, riskAtr, multiGrund } = calcState;
   if (!ticker)    return showToast('Ticker fehlt', 'error');
@@ -1074,6 +1083,7 @@ function saveTrade() {
     edge_multi:     edgeMulti,
     edge_multi_grund: multiGrund,
     atr_pct:        atr,
+    dollar_vol_m:   readDollarVol(),
     risk_atr:       +(riskAtr || 0).toFixed(3),
     risk_atr_konv:  'atr/risk',
     setup_grad:     document.getElementById('c-setup').value,
@@ -1149,6 +1159,7 @@ function saveKandidat() {
     risk_pct:   riskStufe,
     risk_share_pct: +riskPct.toFixed(3),
     atr_pct:    atr,
+    dollar_vol_m: readDollarVol(),
     risk_atr:   +riskAtr.toFixed(3),
     risk_atr_konv: 'atr/risk',
     oneR:       +oneR.toFixed(4),
@@ -1348,6 +1359,9 @@ function renderKandidaten() {
           edge_multi: k.edge_multi ?? 1,
           edge_multi_grund: k.edge_multi_grund || '',
           atr_pct: k.atr_pct || 0,
+          // 14.11.2026: Ø Dollar-Volumen 20d (Mio. $) aus der Analyse — muss mit, sonst
+          // fehlt es im geschlossenen Trade (gleiches Leck wie `modus`/`edges`).
+          dollar_vol_m: k.dollar_vol_m ?? null,
           risk_atr: riskAtrAkt,
           risk_atr_konv: 'atr/risk',
           theme: k.theme, fomo: k.fomo,
