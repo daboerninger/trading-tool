@@ -11,13 +11,15 @@ Datei → Globale Konfiguration → API → Einstellungen:
 - Nur Verbindungen vom lokalen Host zulassen ✅
 - Socket Port: Paper 7497 · Live 7496
 
-## Start (Terminal, vor 15:40 MEZ)
-    ~/Dev/Trading/Trading_Tool/ibkr_bridge/start.sh            # Paper Trading
-    ~/Dev/Trading/Trading_Tool/ibkr_bridge/start.sh --live     # Live
-    ~/Dev/Trading/Trading_Tool/ibkr_bridge/start.sh --dry-run  # ohne TWS, nur prüfen
+## Start
+Läuft automatisch ab der Mac-Anmeldung (LaunchAgent `local.ibkr-bridge`, Log `bridge.log`).
+Sie erkennt selbst, welches TWS läuft (Port 7497 oder 7496) und ob es Paper oder Live ist
+(Paper-Konten beginnen mit „D"). Das Tool zeigt den Modus unter dem Knopf und in der Rückfrage.
 
-Beim ersten Start wird `.venv` mit `ib_insync` angelegt. Beenden mit Ctrl+C.
+    ./install_autostart.sh     # Autostart einrichten
+    ./uninstall_autostart.sh   # Autostart entfernen (z. B. bei Workflow-Wechsel)
+    ./start.sh --dry-run       # manuell, ohne TWS, nur prüfen (Autostart vorher beenden)
 
 ## Sicherungen
 Abgelehnt wird: Stopp ≥ Trigger, Limit > 1 % über Trigger, Stopp > 8 % unter Trigger,
-Positionswert über der Kapitalgrenze aus dem Rechner, fremde Webseiten (nur Trading Tool).
+Positionswert über der Kapitalgrenze aus dem Rechner, Modus im Tool ≠ verbundenes TWS, fremde Webseiten (nur Trading Tool).
