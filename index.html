@@ -8,7 +8,6 @@
   <link rel="preconnect" href="https://fonts.googleapis.com">
   <link href="https://fonts.googleapis.com/css2?family=DM+Sans:wght@300;400;500;600;700&family=DM+Mono:wght@400;500&display=swap" rel="stylesheet">
   <script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.3/dist/chart.umd.min.js"></script>
-  <script src="https://cdnjs.cloudflare.com/ajax/libs/qrcodejs/1.0.0/qrcode.min.js"></script>
 
   <style>
     *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
@@ -157,8 +156,6 @@
     .chart-card { background: var(--card); border: 1px solid var(--border); border-radius: var(--radius); padding: 20px; margin-bottom: 16px; }
     .chart-card canvas { max-height: 240px; }
 
-    /* IBKR */
-    .ibkr-layout { display: grid; grid-template-columns: 1fr 1fr; gap: 16px; }
     .deep-link-box { background: var(--bg); border: 1px solid var(--border); border-radius: var(--radius-sm); padding: 12px; font-family: 'DM Mono', monospace; font-size: 11px; color: var(--accent); word-break: break-all; min-height: 56px; margin: 12px 0; }
 
     /* Modal */
@@ -187,7 +184,7 @@
     .flex { display: flex; } .items-center { align-items: center; } .gap-8 { gap: 8px; }
     .divider { border: none; border-top: 1px solid var(--border); margin: 16px 0; }
 
-    @media (max-width: 900px) { .grid-4 { grid-template-columns: 1fr 1fr !important; } .calc-layout { grid-template-columns: 1fr; } .stats-grid { grid-template-columns: 1fr 1fr; } .ibkr-layout { grid-template-columns: 1fr; } }
+    @media (max-width: 900px) { .grid-4 { grid-template-columns: 1fr 1fr !important; } .calc-layout { grid-template-columns: 1fr; } .stats-grid { grid-template-columns: 1fr 1fr; } }
     @media (max-width: 600px) {
       .main-content { padding: 12px; }
       .grid-2, .grid-3 { grid-template-columns: 1fr; }
@@ -199,9 +196,6 @@
       .stats-grid { grid-template-columns: 1fr 1fr; }
       .card { padding: 14px; }
       .position-actions { flex-wrap: wrap; }
-      .ibkr-price-grid { grid-template-columns: 1fr 1fr !important; }
-      .ibkr-hidden-field { display: none !important; }
-      .ibkr-qr-grid { grid-template-columns: 1fr !important; }
     }
     @media (max-width: 400px) {
       .stats-grid { grid-template-columns: 1fr; }
@@ -268,7 +262,6 @@
     <button class="tab-btn" data-tab="kandidaten">Kandidaten</button>
     <button class="tab-btn" data-tab="journal">Journal</button>
     <button class="tab-btn" data-tab="stats">Stats</button>
-    <button class="tab-btn" data-tab="ibkr">IBKR</button>
   </nav>
 
   <main class="main-content">
@@ -277,7 +270,6 @@
     <div id="tab-positions"   class="tab-panel active"></div>
     <div id="tab-journal"   class="tab-panel"></div>
     <div id="tab-stats"     class="tab-panel"></div>
-    <div id="tab-ibkr"      class="tab-panel"></div>
   </main>
 </div>
 
@@ -591,7 +583,6 @@ function activateTab(tabId) {
       case 'positions':   initPositions(); break;
       case 'journal':   initJournal(); break;
       case 'stats':     initStats(); break;
-      case 'ibkr':      initIBKR(); break;
     }
   }
 }
@@ -1428,7 +1419,7 @@ function renderKandidaten() {
               <td>${k.theme ? `<span class="badge badge-gray">${k.theme}</span>` : '—'}</td>
               <td>
                 <div style="display:flex;gap:4px;white-space:nowrap">
-                  <button class="btn btn-ghost btn-sm btn-k-ibkr"  data-id="${k.id}" title="Order in IBKR platzieren">Order →</button>
+                  <button class="btn btn-ghost btn-sm btn-k-ibkr"  data-id="${k.id}" title="In den Rechner laden und an TWS senden">Order →</button>
                   <button class="btn btn-primary btn-sm btn-k-trade" data-id="${k.id}" title="Als offene Position erfassen">Erfassen</button>
                   <button class="btn btn-ghost btn-sm btn-k-edit"  data-id="${k.id}" title="Bearbeiten">✎</button>
                   <button class="btn btn-ghost btn-sm btn-k-pass"  data-id="${k.id}" title="Als Pass speichern">Pass</button>
@@ -1522,18 +1513,22 @@ function renderKandidaten() {
     });
   });
 
-  // IBKR
+  // Order → (16.11.2026): laedt den Kandidaten wie „Bearbeiten“ in den Rechner und springt
+  // zum Knopf „An TWS senden“. Ersetzt den frueheren QR-/Deep-Link-Reiter (funktionierte nicht).
   list.querySelectorAll('.btn-k-ibkr').forEach(btn => {
     btn.addEventListener('click', () => {
       const k = LS.get(KEY_KANDIDATEN).find(x => x.id === btn.dataset.id);
       if (!k) return;
-      // Werte in calcState laden
-      Object.assign(calcState, { ticker: k.ticker, shares: k.aktien,
-        entry: k.entry_trigger || k.entry, limit: k.entry,
-        lod: k.lod || k.stopp_hard, stopp: k.stopp_hard });
-      // IBKR-Tab neu initialisieren damit Auto-Fill greift (auch wenn Tab schon offen war)
-      initialized['ibkr'] = false;
-      document.querySelector('[data-tab="ibkr"]').click();
+      calcEditId = k.id;
+      initialized['calc'] = false;
+      document.querySelector('[data-tab="calc"]').click();
+      loadKandidatIntoCalc(k);
+      const b = document.getElementById('btn-tws');
+      if (b) {
+        b.scrollIntoView({ behavior: 'smooth', block: 'center' });
+        b.style.boxShadow = '0 0 0 3px var(--green)';
+        setTimeout(() => { b.style.boxShadow = ''; }, 2500);
+      }
     });
   });
 
@@ -2629,181 +2624,6 @@ function renderHyperWindows(trades) {
   });
 }
 
-// ═══════════════════════════════════════════════════════════════════════════════
-// TAB 5 — IBKR
-// ═══════════════════════════════════════════════════════════════════════════════
-function initIBKR() {
-  document.getElementById('tab-ibkr').innerHTML = `
-    <div class="section-header">
-      <span class="section-title">IBKR Order Generator</span>
-      <button class="btn btn-ghost btn-sm" id="btn-load-calc">Rechner-Werte laden</button>
-    </div>
-    <div class="card" style="max-width:680px;margin:0 auto">
-      <div class="card-title">Kombinierte Order</div>
-      <div class="grid-2 mb-12">
-        <div class="field"><label>Ticker</label><input type="text" id="ib-ticker" placeholder="AAPL" style="text-transform:uppercase"></div>
-        <div class="field"><label>Anzahl</label><input type="number" id="ib-shares" placeholder="100"></div>
-      </div>
-      <div style="border:1px solid var(--border);border-radius:var(--radius-sm);padding:12px;margin-bottom:12px">
-        <div style="font-size:11px;font-weight:600;color:var(--accent);text-transform:uppercase;letter-spacing:.05em;margin-bottom:10px">Kauf-Order (STP LMT)</div>
-        <div class="ibkr-price-grid" style="display:grid;grid-template-columns:1fr 1fr 1fr auto;gap:12px;align-items:end">
-          <div class="field"><label>Entry-Trigger</label><input type="number" id="ib-entry-trigger" placeholder="100.00" step="0.01"></div>
-          <div class="field"><label>Limit-Kurs</label><input type="number" id="ib-limit" placeholder="100.25" step="0.01"></div>
-          <div class="field ibkr-hidden-field" style="visibility:hidden"><label>—</label><input type="number" style="visibility:hidden"></div>
-          <div class="field"><label>Gültigkeit</label><select id="ib-tif-buy"><option value="DAY" selected>DAY</option><option value="GTC">GTC</option></select></div>
-        </div>
-      </div>
-      <div style="border:1px solid var(--border);border-radius:var(--radius-sm);padding:12px;margin-bottom:12px">
-        <div style="font-size:11px;font-weight:600;color:var(--red);text-transform:uppercase;letter-spacing:.05em;margin-bottom:10px">Stopp-Order (STP LMT)</div>
-        <div class="ibkr-price-grid" style="display:grid;grid-template-columns:1fr 1fr 1fr auto;gap:12px;align-items:end">
-          <div class="field"><label>Stop-Trigger</label><input type="number" id="ib-trigger" placeholder="95.50" step="0.01"></div>
-          <div class="field"><label>Stopp-Limit</label><input type="number" id="ib-stopp" placeholder="95.00" step="0.01"></div>
-          <div class="field ibkr-hidden-field" style="visibility:hidden"><label>—</label><input type="number" style="visibility:hidden"></div>
-          <div class="field"><label>Gültigkeit</label><select id="ib-tif-stp"><option value="DAY">DAY</option><option value="GTC" selected>GTC</option></select></div>
-        </div>
-      </div>
-      <div class="grid-2 mb-12">
-        <div class="field"><label>Währung</label><select id="ib-cur"><option value="USD" selected>USD</option><option value="EUR">EUR</option></select></div>
-        <div class="field"><label>Börse</label><select id="ib-exch"><option value="SMART" selected>SMART</option><option value="NASDAQ">NASDAQ</option><option value="NYSE">NYSE</option><option value="XETRA">XETRA</option></select></div>
-      </div>
-      <button class="btn btn-primary w-full" id="btn-gen-both">Orders generieren</button>
-
-      <div class="ibkr-qr-grid" style="display:grid;grid-template-columns:1fr 1fr;gap:16px;margin-top:20px">
-        <div>
-          <div style="font-size:11px;font-weight:600;color:var(--accent);text-transform:uppercase;letter-spacing:.05em;margin-bottom:8px">1. Kauf-Order scannen</div>
-          <div class="deep-link-box" id="dl-buy" style="min-height:44px;font-size:10px">—</div>
-          <div style="display:flex;gap:8px;margin-top:6px;flex-wrap:wrap">
-            <button class="btn btn-ghost btn-sm" id="btn-copy-buy">Link kopieren</button>
-            <button class="btn btn-ghost btn-sm" id="btn-params-buy" style="display:none">Felder kopieren</button>
-            <a id="open-buy" href="#" class="btn btn-primary btn-sm" style="display:none;text-decoration:none">In IBKR öffnen</a>
-          </div>
-          <div id="qr-buy" style="margin-top:10px;display:flex;justify-content:center"></div>
-        </div>
-        <div>
-          <div style="font-size:11px;font-weight:600;color:var(--red);text-transform:uppercase;letter-spacing:.05em;margin-bottom:8px">2. Stopp-Order scannen</div>
-          <div class="deep-link-box" id="dl-stopp" style="min-height:44px;font-size:10px">—</div>
-          <div style="display:flex;gap:8px;margin-top:6px;flex-wrap:wrap">
-            <button class="btn btn-ghost btn-sm" id="btn-copy-stopp">Link kopieren</button>
-            <button class="btn btn-ghost btn-sm" id="btn-params-stopp" style="display:none">Felder kopieren</button>
-            <a id="open-stopp" href="#" class="btn btn-danger btn-sm" style="display:none;text-decoration:none">In IBKR öffnen</a>
-          </div>
-          <div id="qr-stopp" style="margin-top:10px;display:flex;justify-content:center"></div>
-        </div>
-      </div>
-    </div>`;
-
-  document.getElementById('ib-ticker').addEventListener('input', e => e.target.value = e.target.value.toUpperCase());
-
-  function fillIBKRFields() {
-    const { ticker, shares, entry, limit, lod, stopp } = calcState;
-    if (!ticker && !shares) return false;
-    if (ticker) document.getElementById('ib-ticker').value = ticker;
-    if (shares) document.getElementById('ib-shares').value = shares;
-    if (limit) {
-      document.getElementById('ib-entry-trigger').value = (entry || limit).toFixed(2);
-      document.getElementById('ib-limit').value         = limit.toFixed(2);
-    }
-    if (stopp) {
-      document.getElementById('ib-trigger').value = (lod || stopp).toFixed(2);
-      document.getElementById('ib-stopp').value   = stopp.toFixed(2);
-    }
-    return true;
-  }
-
-  // Beim Init: falls Werte aus Kandidaten vorliegen, direkt befüllen
-  if (fillIBKRFields()) showToast('Werte aus Kandidaten geladen', 'success');
-
-  document.getElementById('btn-load-calc').addEventListener('click', () => {
-    if (fillIBKRFields()) showToast('Rechner-Werte geladen', 'success');
-    else showToast('Rechner zuerst ausfüllen', 'error');
-  });
-
-  function renderQR(containerId, url) {
-    const el = document.getElementById(containerId);
-    el.innerHTML = '';
-    if (typeof QRCode === 'undefined') return;
-    new QRCode(el, {
-      text: url,
-      width: 160,
-      height: 160,
-      colorDark: '#E2E8F0',
-      colorLight: '#13161E',
-      correctLevel: QRCode.CorrectLevel.M
-    });
-  }
-
-  let buyParamsText = null;
-  let stpParamsText = null;
-
-  document.getElementById('btn-gen-both').addEventListener('click', () => {
-    const ticker  = document.getElementById('ib-ticker').value;
-    const shares  = document.getElementById('ib-shares').value;
-    const entryTrigger = document.getElementById('ib-entry-trigger').value;
-    const limit        = document.getElementById('ib-limit').value;
-    const trigger      = document.getElementById('ib-trigger').value;
-    const stopp        = document.getElementById('ib-stopp').value;
-    const cur          = document.getElementById('ib-cur').value;
-    const exch         = document.getElementById('ib-exch').value;
-    const tifBuy       = document.getElementById('ib-tif-buy').value;
-    const tifStp       = document.getElementById('ib-tif-stp').value;
-    if (!ticker || !shares) return showToast('Ticker und Anzahl erforderlich', 'error');
-    if (!entryTrigger && !limit && !trigger && !stopp) return showToast('Mindestens ein Kurs erforderlich', 'error');
-
-    const base = `https://daboerninger.github.io/trading-tool/redirect.html`;
-
-    function buildDeepParams(params) {
-      return params.join('&');
-    }
-
-    if (entryTrigger || limit) {
-      const auxP   = entryTrigger || limit;
-      const lmtP   = limit        || entryTrigger;
-      const query  = buildDeepParams([
-        `action=BUY`, `orderType=STP%20LMT`, `symbol=${ticker}`,
-        `quantity=${shares}`, `price=${lmtP}`, `auxPrice=${auxP}`,
-        `currency=${cur}`, `exchange=${exch}`, `tif=${tifBuy}`
-      ]);
-      const urlBuy = `${base}?${query}`;
-      document.getElementById('dl-buy').textContent = urlBuy;
-      const ob = document.getElementById('open-buy');
-      ob.href = urlBuy; ob.style.display = 'inline-flex';
-      renderQR('qr-buy', urlBuy);
-      buyParamsText = `${ticker} — Kauf (STP LMT)\nStück: ${shares}\nTrigger: ${auxP}\nLimit: ${lmtP}\n${exch} · ${cur} · ${tifBuy}`;
-      document.getElementById('btn-params-buy').style.display = 'inline-flex';
-    }
-    if (trigger || stopp) {
-      const auxP   = trigger || stopp;
-      const lmtP   = stopp   || trigger;
-      const query  = buildDeepParams([
-        `action=SELL`, `orderType=STP%20LMT`, `symbol=${ticker}`,
-        `quantity=${shares}`, `price=${lmtP}`, `auxPrice=${auxP}`,
-        `currency=${cur}`, `exchange=${exch}`, `tif=${tifStp}`
-      ]);
-      const urlStp = `${base}?${query}`;
-      document.getElementById('dl-stopp').textContent = urlStp;
-      const os = document.getElementById('open-stopp');
-      os.href = urlStp; os.style.display = 'inline-flex';
-      renderQR('qr-stopp', urlStp);
-      stpParamsText = `${ticker} — Stopp (STP LMT)\nStück: ${shares}\nTrigger: ${auxP}\nLimit: ${lmtP}\n${exch} · ${cur} · ${tifStp}`;
-      document.getElementById('btn-params-stopp').style.display = 'inline-flex';
-    }
-  });
-
-  document.getElementById('btn-copy-buy').addEventListener('click', () => {
-    const url = document.getElementById('dl-buy').textContent;
-    if (url !== '—') navigator.clipboard.writeText(url).then(() => showToast('Link kopiert', 'success'));
-  });
-  document.getElementById('btn-copy-stopp').addEventListener('click', () => {
-    const url = document.getElementById('dl-stopp').textContent;
-    if (url !== '—') navigator.clipboard.writeText(url).then(() => showToast('Link kopiert', 'success'));
-  });
-  document.getElementById('btn-params-buy').addEventListener('click', () => {
-    if (buyParamsText) navigator.clipboard.writeText(buyParamsText).then(() => showToast('Felder kopiert', 'success'));
-  });
-  document.getElementById('btn-params-stopp').addEventListener('click', () => {
-    if (stpParamsText) navigator.clipboard.writeText(stpParamsText).then(() => showToast('Felder kopiert', 'success'));
-  });
-}
 </script>
 </body>
 </html>
