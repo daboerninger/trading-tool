@@ -11,7 +11,8 @@
       "**/node_modules/**",
       "trading_tool_v1.html",
       "*.csv",
-      "*.json"
+      "*.json",
+      "ibkr_bridge/**"
     ],
     "headers": [
       {

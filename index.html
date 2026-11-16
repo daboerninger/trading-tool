@@ -187,7 +187,7 @@
     .flex { display: flex; } .items-center { align-items: center; } .gap-8 { gap: 8px; }
     .divider { border: none; border-top: 1px solid var(--border); margin: 16px 0; }
 
-    @media (max-width: 900px) { .calc-layout { grid-template-columns: 1fr; } .stats-grid { grid-template-columns: 1fr 1fr; } .ibkr-layout { grid-template-columns: 1fr; } }
+    @media (max-width: 900px) { .grid-4 { grid-template-columns: 1fr 1fr !important; } .calc-layout { grid-template-columns: 1fr; } .stats-grid { grid-template-columns: 1fr 1fr; } .ibkr-layout { grid-template-columns: 1fr; } }
     @media (max-width: 600px) {
       .main-content { padding: 12px; }
       .grid-2, .grid-3 { grid-template-columns: 1fr; }
@@ -635,18 +635,31 @@ async function bootstrap() {
 }
 
 function initCalc() {
+  calcState.quick = null;
   document.getElementById('tab-calc').innerHTML = `
     <div class="calc-layout">
       <div>
         <div class="card calc-section">
           <div class="card-title">Basis</div>
-          <div class="grid-3">
+          <div class="grid-4" style="display:grid;grid-template-columns:repeat(4,1fr);gap:12px">
             <div class="field"><label>Ticker</label><input type="text" id="c-ticker" placeholder="AAPL" style="text-transform:uppercase"></div>
             <div class="field"><label>Depot (€)</label><input type="number" id="c-depot" placeholder="50000"></div>
             <div class="field"><label>Risk-Stufe</label>
               <select id="c-risk"><option value="0.25">0.25%</option><option value="0.5" selected>0.50%</option><option value="0.75">0.75%</option></select>
             </div>
+            <div class="field"><label>Max. Position (% Depot)</label><input type="number" id="c-poscap" value="25" step="1" min="1" max="100"></div>
           </div>
+        </div>
+
+        <div class="card calc-section" id="quick-card">
+          <div class="card-title">Schnell-Modus · 1. 10-Min-Bar (ab 15:40 MEZ)</div>
+          <div class="grid-4" style="display:grid;grid-template-columns:repeat(4,1fr);gap:12px">
+            <div class="field"><label>Tages-Trigger</label><input type="number" id="q-trig" step="0.01" placeholder="Vortageshoch"></div>
+            <div class="field"><label>Hoch 1. Bar</label><input type="number" id="q-h" step="0.01" inputmode="decimal"></div>
+            <div class="field"><label>Tief 1. Bar</label><input type="number" id="q-l" step="0.01" inputmode="decimal"></div>
+            <div class="field"><label>Schluss 1. Bar</label><input type="number" id="q-c" step="0.01" inputmode="decimal"></div>
+          </div>
+          <div id="q-status" class="text-muted" style="font-size:12px;margin-top:10px">Hoch und Tief eintragen → Entry = über dem Bar-Hoch (+0,05 %, mind. Tages-Trigger), Stopp = Bar-Tief −0,25 %. Noch keine Regel, Vorwärtstest.</div>
         </div>
 
         <div class="card calc-section">
@@ -771,6 +784,7 @@ function initCalc() {
         <div class="result-row"><span class="result-label">Anzahl Aktien</span><span class="result-value big accent" id="r-shares">—</span></div>
         <div class="result-row"><span class="result-label">Positionsgröße</span><span class="result-value" id="r-possize">—</span></div>
         <div class="result-row"><span class="result-label">Risk (€)</span><span class="result-value amber" id="r-riskeur">—</span></div>
+        <div id="r-cap" style="display:none;padding:8px 10px;border-radius:var(--radius-sm);background:var(--amber-dim);color:var(--amber);font-size:12px;margin:6px 0"></div>
         <div class="result-row"><span class="result-label">1R Ziel</span><span class="result-value green" id="r-1r">—</span></div>
         <div class="result-row"><span class="result-label">2R Ziel</span><span class="result-value green" id="r-2r">—</span></div>
         <div class="result-row"><span class="result-label">3R Ziel</span><span class="result-value green" id="r-3r">—</span></div>
@@ -780,6 +794,8 @@ function initCalc() {
         <div id="r-risk-atr" style="margin:8px 0 4px;text-align:center;font-family:'DM Mono',monospace;font-size:13px;color:var(--text-muted)"></div>
         <div id="calc-edit-hint" style="display:none;padding:8px 10px;border-radius:var(--radius-sm);background:var(--accent-dim);color:var(--accent);font-size:12px;margin-bottom:8px"></div>
         <div class="btn-row" style="flex-direction:column;gap:6px">
+          <button class="btn btn-success w-full" id="btn-tws">An TWS senden (nicht übermittelt)</button>
+          <div id="tws-status" class="text-muted" style="font-size:11px;text-align:center;margin-bottom:4px">Brücke: —</div>
           <button class="btn btn-ghost w-full" id="btn-kandidat">Zu Kandidaten</button>
           <button class="btn btn-ghost w-full" id="btn-kandidat-cancel" style="display:none">Bearbeiten abbrechen</button>
           <div style="display:flex;gap:6px" id="calc-trade-row">
@@ -798,6 +814,19 @@ function initCalc() {
   ['c-depot','c-risk','c-entry','c-limit-puffer','c-lod','c-stopp-puffer','c-atr','c-edge-multi','c-multi-grund'].forEach(id =>
     document.getElementById(id)?.addEventListener('input', recalc)
   );
+
+  // Kapitalgrenze: wie das Depot lokal + in Firestore gemerkt.
+  const savedCap = localStorage.getItem('tt_poscap');
+  if (savedCap) document.getElementById('c-poscap').value = savedCap;
+  document.getElementById('c-poscap').addEventListener('input', recalc);
+  document.getElementById('c-poscap').addEventListener('change', e => {
+    if (!(+e.target.value > 0)) return;
+    localStorage.setItem('tt_poscap', e.target.value);
+    setDoc(doc(db, 'users', auth.currentUser.uid, 'settings', 'poscap'), { value: e.target.value }).catch(() => {});
+  });
+  ['q-trig','q-h','q-l','q-c'].forEach(id => document.getElementById(id).addEventListener('input', applyQuick));
+  document.getElementById('btn-tws').addEventListener('click', sendToTws);
+  checkBridge();
 
   // Depot-Wert bei Änderung speichern
   document.getElementById('c-depot').addEventListener('change', e => {
@@ -899,6 +928,75 @@ function exitCalcEditMode() {
 // Laedt einen bestehenden Kandidaten zurueck in den Rechner. Felder, die vor dem 14.8.2026
 // nicht gespeichert wurden (Puffer, Multiplikator, Edge-Auswahl), werden aus den vorhandenen
 // Werten abgeleitet. MUSS nach initCalc() laufen — initCalc baut das innerHTML neu auf.
+// Schnell-Modus 1. 10-Min-Bar (16.11.2026, Vorwaertstest — keine Regel).
+// Entry = max(Bar-Hoch * 1.0005, Tages-Trigger), LOD = Bar-Tief, Stopp-Puffer 0,25 %.
+// Ohne Hoch/Tief bleibt der Rechner im Tages-Trigger-Modus.
+function applyQuick() {
+  const v = id => parseFloat(document.getElementById(id)?.value) || 0;
+  const trig = v('q-trig'), h = v('q-h'), l = v('q-l'), c = v('q-c');
+  const st = document.getElementById('q-status');
+  if (!(h > 0 && l > 0 && h > l)) {
+    calcState.quick = null;
+    if (st) st.innerHTML = h && l && h <= l ? '<span style="color:var(--red)">Hoch muss über dem Tief liegen</span>' : st.innerHTML;
+    if (trig > 0 && !(h || l)) { document.getElementById('c-entry').value = trig; recalc(); }
+    return;
+  }
+  const entry = Math.max(h * 1.0005, trig || 0);
+  document.getElementById('c-entry').value = entry.toFixed(2);
+  document.getElementById('c-lod').value = l.toFixed(2);
+  document.getElementById('c-stopp-puffer').value = 0.25;
+  document.getElementById('c-limit-puffer').value = 0.25;
+  const pos = c > 0 ? (c - l) / (h - l) : null;
+  calcState.quick = { h, l, c: c || null, close_pos: pos == null ? null : +pos.toFixed(3), trigger_tages: trig || null };
+  if (st) {
+    const posTxt = pos == null ? 'Schluss fehlt' :
+      pos >= 0.5 ? `<span style="color:var(--green)">Schluss in der oberen Hälfte (${fmt(pos*100,0)} %) ✓</span>`
+                 : `<span style="color:var(--red)">Schluss in der unteren Hälfte (${fmt(pos*100,0)} %) → laut Test kein Trade</span>`;
+    st.innerHTML = `${posTxt} · Entry ${fmt(entry)}${trig > h * 1.0005 ? ' (Tages-Trigger liegt höher)' : ''} · Stopp ${fmt(l * 0.9975)}`;
+  }
+  recalc();
+}
+
+const BRIDGE = 'http://127.0.0.1:8765';
+async function checkBridge() {
+  const el = document.getElementById('tws-status');
+  if (!el) return;
+  try {
+    const r = await fetch(BRIDGE + '/status', { signal: AbortSignal.timeout(9000) });
+    const j = await r.json();
+    el.innerHTML = j.tws === false
+      ? `<span style="color:var(--amber)">Brücke läuft (${j.mode}), TWS nicht erreichbar</span>`
+      : `<span style="color:var(--green)">Brücke bereit · ${j.mode}</span>`;
+  } catch { el.textContent = 'Brücke nicht gestartet (ibkr_bridge/start.sh)'; }
+}
+
+async function sendToTws() {
+  const { ticker, entry, limit, stopp, shares, depot, posCap, capped, riskEurEff, riskEur } = calcState;
+  if (!ticker || !(entry > 0) || !(limit > 0) || !(stopp > 0) || !(shares > 0))
+    return showToast('Ticker, Entry, Stopp und Stückzahl nötig', 'error');
+  if (calcState.quick && calcState.quick.close_pos != null && calcState.quick.close_pos < 0.5
+      && !confirm('Die 1. Bar schließt in der unteren Hälfte — laut Test kein Trade. Trotzdem anlegen?')) return;
+  const msg = `${ticker}: KAUF ${shares} Stk. · Trigger ${fmt(entry)} · Limit ${fmt(limit)} · Stopp ${fmt(stopp)}`
+    + (capped ? `\nKapitalbegrenzt: Risiko ${fmt(riskEurEff)} € statt ${fmt(riskEur)} €` : '')
+    + '\n\nWird in TWS angelegt, aber NICHT übermittelt.';
+  if (!confirm(msg)) return;
+  const btn = document.getElementById('btn-tws');
+  btn.disabled = true;
+  try {
+    const r = await fetch(BRIDGE + '/order', {
+      method: 'POST', headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ ticker, shares, trigger: +entry.toFixed(2), limit: +limit.toFixed(2),
+        stop: +stopp.toFixed(2), max_notional: depot > 0 ? depot * posCap / 100 : null }),
+      signal: AbortSignal.timeout(20000),
+    });
+    const j = await r.json();
+    if (j.ok) showToast(`${j.mode}: ${j.text} — in TWS prüfen und übermitteln`, 'success');
+    else showToast('Abgelehnt: ' + j.error, 'error');
+  } catch {
+    showToast('Brücke nicht erreichbar — ibkr_bridge/start.sh gestartet?', 'error');
+  } finally { btn.disabled = false; checkBridge(); }
+}
+
 function loadKandidatIntoCalc(k) {
   const depot = parseFloat(localStorage.getItem('tt_depot')) || 0;
   const set = (id, v) => { const el = document.getElementById(id); if (el) el.value = v; };
@@ -907,6 +1005,9 @@ function loadKandidatIntoCalc(k) {
   if (depot) set('c-depot', depot);
   set('c-risk',  k.risk_pct || 0.5);
   set('c-entry', k.entry_trigger ?? '');
+  set('q-trig',  k.trigger_tages ?? k.entry_trigger ?? '');
+  ['q-h','q-l','q-c'].forEach(id => set(id, k.bar1?.[id.slice(2)] ?? ''));
+  calcState.quick = k.bar1 || null;
   set('c-lod',   k.lod ?? '');
   set('c-atr',   k.atr_pct || '');
   set('c-dvol',  k.dollar_vol_m ?? '');
@@ -978,7 +1079,15 @@ function recalc() {
   const riskEur     = depot * (riskStufe / 100) * edgeMulti;
   const riskPerShare= limit > 0 && stopp > 0 ? limit - stopp : 0;
   const sharesRaw   = riskPerShare > 0 ? riskEur / riskPerShare : 0;
-  const shares      = Math.round(sharesRaw);
+  // Kapitalgrenze (16.11.2026): Stueckzahl hoechstens so gross, dass die Position
+  // <= X % des GANZEN Depots bleibt (nicht des freien Kapitals). Greift vor allem bei
+  // engen Stopps (1. 10-Min-Bar). risk_eur bleibt das GEPLANTE Risiko, risk_eur_eff das echte.
+  const posCap      = parseFloat(document.getElementById('c-poscap')?.value) || 25;
+  const capShares   = depot > 0 && limit > 0 ? Math.floor(depot * posCap / 100 / limit) : Infinity;
+  const riskShares  = Math.round(sharesRaw);
+  const shares      = Math.min(riskShares, capShares);
+  const capped      = riskShares > 0 && capShares < riskShares;
+  const riskEurEff  = shares * riskPerShare;
   const posSize     = shares * limit;
   const oneR        = limit > 0 && riskPerShare > 0 ? limit + riskPerShare : 0;
   const twoR        = limit > 0 && riskPerShare > 0 ? limit + 2 * riskPerShare : 0;
@@ -989,14 +1098,19 @@ function recalc() {
 
   Object.assign(calcState, { depot, riskStufe, entry, limitPuffer, lod, stoppPuffer, atr, edgeMulti,
     multiGrund,
-    limit, stopp, riskPerShare, shares, posSize, riskEur, oneR,
+    limit, stopp, riskPerShare, shares, posSize, riskEur, oneR, posCap, capped, riskEurEff,
     ticker: document.getElementById('c-ticker').value.toUpperCase(),
     fomo: document.getElementById('c-fomo').value === 'true' });
 
   document.getElementById('r-limit').textContent   = limit > 0        ? fmt(limit) + ' €'       : '—';
   document.getElementById('r-stopp').textContent   = stopp > 0        ? fmt(stopp) + ' €'       : '—';
   document.getElementById('r-rps').textContent     = riskPerShare > 0 ? fmt(riskPerShare) + ' €': '—';
-  document.getElementById('r-shares').textContent  = sharesRaw > 0    ? fmt(sharesRaw, 1)        : '—';
+  document.getElementById('r-shares').textContent  = sharesRaw > 0    ? (capped ? String(shares) : fmt(sharesRaw, 1)) : '—';
+  const capEl = document.getElementById('r-cap');
+  if (capEl) {
+    capEl.style.display = capped ? 'block' : 'none';
+    if (capped) capEl.innerHTML = `Kapitalgrenze ${fmt(posCap,0)} % greift: <strong>${shares}</strong> statt ${riskShares} Stück · Risiko <strong>${fmt(riskEurEff)} €</strong> statt ${fmt(riskEur)} € (${fmt(riskEurEff / riskEur * 100, 0)} %)`;
+  }
   document.getElementById('r-possize').textContent = posSize > 0      ? fmt(posSize) + ' €'     : '—';
   document.getElementById('r-riskeur').textContent = riskEur > 0      ? fmt(riskEur) + ' €'     : '—';
   document.getElementById('r-1r').textContent      = oneR > 0         ? fmt(oneR)   + ' €'      : '—';
@@ -1030,9 +1144,8 @@ function recalc() {
     { pass: riskPerShare > 0 && entry > 0 && riskPerShare/entry < 0.08,
       warn: riskPerShare > 0 && entry > 0 && riskPerShare/entry >= 0.08,
       label: `Risk/Share < 8% ${riskPerShare > 0 && entry > 0 ? '('+fmt(riskPerShare/entry*100,1)+'%)' : ''}` },
-    { pass: depot > 0 && posSize > 0 && posSize/depot <= 0.25,
-      warn: depot > 0 && posSize > 0 && posSize/depot > 0.25 && posSize/depot <= 0.35,
-      label: `Position ≤ 25% Depot ${posSize > 0 && depot > 0 ? '('+fmt(posSize/depot*100,1)+'%)' : ''}` },
+    { pass: depot > 0 && posSize > 0 && posSize/depot <= posCap/100 + 1e-9,
+      label: `Position ≤ ${fmt(posCap,0)}% Depot ${posSize > 0 && depot > 0 ? '('+fmt(posSize/depot*100,1)+'%)' : ''}` },
     { pass: calcState.edgeCount >= 5, warn: calcState.edgeCount >= 3 && calcState.edgeCount < 5,
       label: `Edge Count ≥ 5 (${calcState.edgeCount})` },
     ...(atr > 0 ? [{ pass: atr >= 2, warn: atr >= 1 && atr < 2, label: `ATR% ≥ 2% (${atr}%)` }] : []),
@@ -1079,6 +1192,11 @@ function saveTrade() {
     stopp_aktuell:  +stopp.toFixed(4),
     risk_pct:       riskStufe,
     risk_eur:       +riskEur.toFixed(2),
+    pos_cap_pct:    calcState.posCap,
+    kapitalbegrenzt: !!calcState.capped,
+    risk_eur_eff:   +(calcState.riskEurEff || 0).toFixed(2),
+    entry_methode:  calcState.quick ? '10min' : 'tages',
+    bar1:           calcState.quick || null,
     edge_count:     edgeCount,
     edge_multi:     edgeMulti,
     edge_multi_grund: multiGrund,
@@ -1150,12 +1268,18 @@ function saveKandidat() {
   const felder = {
     ticker,
     entry_trigger:+calcState.entry.toFixed(4),
+    trigger_tages: calcState.quick?.trigger_tages ?? +calcState.entry.toFixed(4),
     entry:        +limit.toFixed(4),
     lod:          +calcState.lod.toFixed(4),
     stopp_hard:   +stopp.toFixed(4),
     aktien:     shares,
     pos_groesse:+(shares * limit).toFixed(2),
     risk_eur:   +riskEur.toFixed(2),
+    pos_cap_pct:    calcState.posCap,
+    kapitalbegrenzt: !!calcState.capped,
+    risk_eur_eff:   +(calcState.riskEurEff || 0).toFixed(2),
+    entry_methode:  calcState.quick ? '10min' : 'tages',
+    bar1:           calcState.quick || null,
     risk_pct:   riskStufe,
     risk_share_pct: +riskPct.toFixed(3),
     atr_pct:    atr,
