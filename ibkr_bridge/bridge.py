@@ -15,14 +15,20 @@ nicht zum verbundenen TWS, wird abgelehnt.
 
 Das Trading Tool schickt per POST an http://127.0.0.1:8765/order:
   {"ticker": "DOCU", "shares": 12, "trigger": 81.40, "limit": 81.60,
-   "stop": 79.10, "stop_limit": null, "max_notional": 450}
+   "stop": 79.10, "stop_limit": null, "max_notional": 450, "start_et": "09:40"}
+start_et (optional) = Uhrzeit in US-Ostküstenzeit, ab der der Kauf aktiv wird
+(TWS „Good After Time“). Leer = sofort ab Börseneröffnung.
 """
 import argparse
 import json
 import math
 import sys
 import threading
+from datetime import datetime, time, timedelta
 from http.server import BaseHTTPRequestHandler, HTTPServer
+from zoneinfo import ZoneInfo
+
+ET = ZoneInfo("America/New_York")
 
 HOST, HTTP_PORT = "127.0.0.1", 8765
 # Seiten, die die Brücke ansprechen dürfen (Trading Tool + lokale Tests).
@@ -75,9 +81,31 @@ def check(o):
     mx = o.get("max_notional")
     if mx not in (None, "") and n * lim > float(mx) * 1.001:
         err.append(f"Positionswert {n * lim:.0f} über der Kapitalgrenze {float(mx):.0f}")
+    gat, gat_txt = None, None
+    start = str(o.get("start_et") or "").strip()
+    if start:
+        try:
+            hh, mm = (int(x) for x in start.split(":"))
+            if not (time(9, 30) <= time(hh, mm) < time(16, 0)):
+                raise ValueError
+            day = session_day_et()
+            gat = f"{day:%Y%m%d} {hh:02d}:{mm:02d}:00 US/Eastern"
+            gat_txt = f"gültig ab {hh:02d}:{mm:02d} ET ({day:%d.%m.})"
+        except ValueError:
+            err.append("Startzeit muss HH:MM zwischen 09:30 und 15:59 US-Zeit (ET) sein")
     r = lambda x: round(x, 2) if x >= 1 else round(x, 4)
     return dict(ticker=t, shares=n, trigger=r(trig), limit=r(lim), stop=r(stp),
-                stop_limit=r(sl) if sl else None), err
+                stop_limit=r(sl) if sl else None, good_after=gat, good_after_txt=gat_txt), err
+
+
+def session_day_et():
+    """Handelstag, für den die Order gilt: heute (US-Ostküste), nach 16:00 ET oder am
+    Wochenende der nächste Wochentag. US-Feiertage kennt die Funktion nicht."""
+    now = datetime.now(ET)
+    d = now.date() + timedelta(days=1) if now.time() >= time(16, 0) else now.date()
+    while d.weekday() >= 5:
+        d += timedelta(days=1)
+    return d
 
 
 def ensure_connected():
@@ -118,6 +146,10 @@ def place(o):
         parent = Order(action="BUY", orderType="STP LMT", totalQuantity=o["shares"],
                        auxPrice=o["trigger"], lmtPrice=o["limit"], tif="DAY",
                        outsideRth=False, transmit=False)
+        if o.get("good_after"):
+            # Kauf erst ab dieser Uhrzeit aktiv (TWS: „Good After Time“). Der Stopp hängt
+            # am Kauf und wird ohnehin erst nach dessen Ausführung scharf.
+            parent.goodAfterTime = o["good_after"]
         parent.orderId = ib.client.getReqId()
         if o["stop_limit"]:
             child = Order(action="SELL", orderType="STP LMT", auxPrice=o["stop"], lmtPrice=o["stop_limit"])
@@ -192,7 +224,8 @@ class H(BaseHTTPRequestHandler):
             print("ABGELEHNT Modus", exp, "erwartet, verbunden", mode, flush=True)
             return self._json(409, {"ok": False, "error": f"Tool zeigte {exp}, verbunden ist aber {mode} — Seite neu prüfen"})
         text = (f"{o['ticker']}: KAUF {o['shares']} STP LMT {o['trigger']}/{o['limit']} DAY"
-                f" · STOPP {'STP LMT ' + str(o['stop']) + '/' + str(o['stop_limit']) if o['stop_limit'] else 'STP ' + str(o['stop'])} GTC")
+                f" · STOPP {'STP LMT ' + str(o['stop']) + '/' + str(o['stop_limit']) if o['stop_limit'] else 'STP ' + str(o['stop'])} GTC"
+                + (f" · {o['good_after_txt']}" if o.get("good_after_txt") else ""))
         if args.dry_run:
             print("TROCKENLAUF", text, flush=True)
             return self._json(200, {"ok": True, "mode": mode, "order": o, "text": text, "ids": None})

@@ -785,6 +785,15 @@ function initCalc() {
         <div id="r-risk-atr" style="margin:8px 0 4px;text-align:center;font-family:'DM Mono',monospace;font-size:13px;color:var(--text-muted)"></div>
         <div id="calc-edit-hint" style="display:none;padding:8px 10px;border-radius:var(--radius-sm);background:var(--accent-dim);color:var(--accent);font-size:12px;margin-bottom:8px"></div>
         <div class="btn-row" style="flex-direction:column;gap:6px">
+          <div style="display:flex;flex-direction:column;gap:4px;margin-bottom:2px">
+            <label for="c-start-et" style="font-size:11px;color:var(--text-muted)">Kauf gültig ab — <strong>US-Zeit (New York, ET)</strong>, leer = sofort ab Open</label>
+            <div style="display:flex;gap:6px">
+              <input id="c-start-et" type="text" inputmode="numeric" maxlength="5" placeholder="HH:MM US-Zeit (ET), z. B. 09:40" style="flex:1">
+              <button type="button" class="btn btn-ghost" data-start-et="09:40" title="Open + 10 Min">+10′</button>
+              <button type="button" class="btn btn-ghost" data-start-et="10:00" title="Open + 30 Min">+30′</button>
+            </div>
+            <div id="c-start-hint" class="text-muted" style="font-size:11px">Open 09:30 ET · ohne Startzeit ist der Kauf ab Börseneröffnung aktiv</div>
+          </div>
           <button class="btn btn-success w-full" id="btn-tws">An TWS senden (nicht übermittelt)</button>
           <div id="tws-status" class="text-muted" style="font-size:11px;text-align:center;margin-bottom:4px">Brücke: —</div>
           <button class="btn btn-ghost w-full" id="btn-kandidat">Zu Kandidaten</button>
@@ -817,6 +826,11 @@ function initCalc() {
   });
   ['q-trig','q-h','q-l','q-c'].forEach(id => document.getElementById(id).addEventListener('input', applyQuick));
   document.getElementById('btn-tws').addEventListener('click', sendToTws);
+  document.getElementById('c-start-et').addEventListener('input', updateStartHint);
+  document.querySelectorAll('[data-start-et]').forEach(b => b.addEventListener('click', () => {
+    document.getElementById('c-start-et').value = b.dataset.startEt;
+    updateStartHint();
+  }));
   checkBridge();
 
   // Depot-Wert bei Änderung speichern
@@ -968,14 +982,53 @@ async function checkBridge() {
 // Status alle 30 s auffrischen, solange der Rechner offen ist (TWS kann zwischen Paper/Live wechseln).
 setInterval(() => { if (document.getElementById('tws-status')?.offsetParent) checkBridge(); }, 30000);
 
+// Startzeit der Kauforder (TWS „Good After Time“) — wird in US-Ostküstenzeit eingegeben,
+// weil Europa und die USA die Uhr an verschiedenen Tagen umstellen: „Open + 10 Min“ ist
+// immer 09:40 ET, aber nicht immer 15:40 MEZ. Rückgabe: 'HH:MM', '' (leer) oder null (ungültig).
+function readStartEt() {
+  const v = (document.getElementById('c-start-et')?.value || '').trim();
+  if (!v) return '';
+  const m = v.match(/^(\d{1,2}):(\d{2})$/);
+  if (!m) return null;
+  const hh = +m[1], mm = +m[2], t = hh * 60 + mm;
+  if (mm > 59 || t < 570 || t >= 960) return null;   // 09:30 bis 15:59 ET
+  return String(hh).padStart(2, '0') + ':' + m[2];
+}
+
+// Rechnet eine ET-Uhrzeit von heute in die lokale Zeit (MEZ/MESZ) um.
+function etToLocal(hhmm) {
+  const now = new Date();
+  const p = Object.fromEntries(new Intl.DateTimeFormat('en-US', { timeZone: 'America/New_York',
+    year: 'numeric', month: '2-digit', day: '2-digit', hour: '2-digit', minute: '2-digit', hourCycle: 'h23' })
+    .formatToParts(now).map(x => [x.type, x.value]));
+  const offsetMin = Math.round((Date.UTC(+p.year, +p.month - 1, +p.day, +p.hour, +p.minute) - now.getTime()) / 60000);
+  const [hh, mm] = hhmm.split(':').map(Number);
+  const utc = Date.UTC(+p.year, +p.month - 1, +p.day, hh, mm) - offsetMin * 60000;
+  return new Date(utc).toLocaleTimeString('de-AT', { hour: '2-digit', minute: '2-digit' });
+}
+
+function updateStartHint() {
+  const el = document.getElementById('c-start-hint');
+  if (!el) return;
+  const s = readStartEt();
+  if (s === '') { el.style.color = ''; el.textContent = 'Open 09:30 ET · ohne Startzeit ist der Kauf ab Börseneröffnung aktiv'; return; }
+  if (s === null) { el.style.color = 'var(--red)'; el.textContent = 'Format HH:MM, zwischen 09:30 und 15:59 US-Zeit (ET)'; return; }
+  const min = (+s.slice(0, 2)) * 60 + (+s.slice(3)) - 570;
+  el.style.color = 'var(--accent)';
+  el.textContent = `${s} ET = ${etToLocal(s)} Uhr bei dir · Open + ${min} Min`;
+}
+
 async function sendToTws() {
   const { ticker, entry, limit, stopp, shares, depot, posCap, capped, riskEurEff, riskEur } = calcState;
   if (!ticker || !(entry > 0) || !(limit > 0) || !(stopp > 0) || !(shares > 0))
     return showToast('Ticker, Entry, Stopp und Stückzahl nötig', 'error');
+  const startEt = readStartEt();
+  if (startEt === null) return showToast('Startzeit: HH:MM zwischen 09:30 und 15:59 US-Zeit (ET)', 'error');
   if (calcState.quick && calcState.quick.close_pos != null && calcState.quick.close_pos < 0.5
       && !confirm('Die 1. Bar schließt in der unteren Hälfte — laut Test kein Trade. Trotzdem anlegen?')) return;
   const msg = `${ticker}: KAUF ${shares} Stk. · Trigger ${fmt(entry)} · Limit ${fmt(limit)} · Stopp ${fmt(stopp)}`
     + (capped ? `\nKapitalbegrenzt: Risiko ${fmt(riskEurEff)} € statt ${fmt(riskEur)} €` : '')
+    + (startEt ? `\nKauf gültig ab ${startEt} US-Zeit (ET) = ${etToLocal(startEt)} Uhr bei dir` : '\nKauf gültig sofort ab Börseneröffnung')
     + '\n\nWird in TWS angelegt, aber NICHT übermittelt.';
   await checkBridge();
   const mode = calcState.bridgeMode;
@@ -987,7 +1040,8 @@ async function sendToTws() {
     const r = await fetch(BRIDGE + '/order', {
       method: 'POST', headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({ ticker, shares, trigger: +entry.toFixed(2), limit: +limit.toFixed(2),
-        stop: +stopp.toFixed(2), max_notional: depot > 0 ? depot * posCap / 100 : null, expect_mode: mode }),
+        stop: +stopp.toFixed(2), max_notional: depot > 0 ? depot * posCap / 100 : null, expect_mode: mode,
+        start_et: startEt || null }),
       signal: AbortSignal.timeout(20000),
     });
     const j = await r.json();
